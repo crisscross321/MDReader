@@ -1,0 +1,195 @@
+/* ==========================================
+   MD reader — Markdown Preview Styling
+   ========================================== */
+
+.preview-content {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 32px 40px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ---- Headings ---- */
+.preview-content h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 1.4em 0 0.6em;
+  line-height: 1.3;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+  color: var(--text-primary);
+}
+
+.preview-content h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 1.2em 0 0.5em;
+  line-height: 1.35;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25em;
+  color: var(--text-primary);
+}
+
+.preview-content h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 1em 0 0.4em;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.preview-content h4 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0.9em 0 0.4em;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.preview-content h5,
+.preview-content h6 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0.8em 0 0.3em;
+  color: var(--text-secondary);
+}
+
+/* ---- Paragraphs ---- */
+.preview-content p {
+  margin: 0 0 1em;
+}
+
+/* ---- Links ---- */
+.preview-content a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.preview-content a:hover {
+  text-decoration: underline;
+  color: var(--accent-hover);
+}
+
+/* ---- Lists ---- */
+.preview-content ul,
+.preview-content ol {
+  margin: 0 0 1em;
+  padding-left: 2em;
+}
+
+.preview-content li {
+  margin-bottom: 0.25em;
+}
+
+.preview-content li > ul,
+.preview-content li > ol {
+  margin-top: 0.25em;
+  margin-bottom: 0;
+}
+
+/* ---- Task Lists ---- */
+.preview-content input[type="checkbox"] {
+  margin-right: 6px;
+  transform: translateY(1px);
+}
+
+/* ---- Blockquote ---- */
+.preview-content blockquote {
+  margin: 0 0 1em;
+  padding: 0.5em 1em;
+  border-left: 4px solid var(--blockquote-border);
+  color: var(--blockquote-text);
+  background: transparent;
+}
+
+.preview-content blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Code ---- */
+.preview-content code {
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.preview-content pre {
+  margin: 0 0 1em;
+  padding: 16px 20px;
+  background: var(--code-block-bg);
+  border-radius: 8px;
+  overflow-x: auto;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+}
+
+.preview-content pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 13px;
+}
+
+/* ---- Tables ---- */
+.preview-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 1em;
+  font-size: 14px;
+}
+
+.preview-content th,
+.preview-content td {
+  border: 1px solid var(--table-border);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.preview-content th {
+  font-weight: 600;
+  background: var(--code-bg);
+}
+
+.preview-content tr:nth-child(even) {
+  background: var(--table-stripe);
+}
+
+/* ---- Horizontal Rule ---- */
+.preview-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5em 0;
+}
+
+/* ---- Images ---- */
+.preview-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 0.5em 0;
+}
+
+/* ---- Strong & Emphasis ---- */
+.preview-content strong {
+  font-weight: 600;
+}
+
+/* ---- Highlight.js Overrides ---- */
+.preview-content .hljs {
+  background: transparent;
+  padding: 0;
+}
+
+/* ---- First heading — no top margin ---- */
+.preview-content > h1:first-child,
+.preview-content > h2:first-child,
+.preview-content > h3:first-child {
+  margin-top: 0;
+}

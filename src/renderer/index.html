@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MD reader</title>
+  <link rel="stylesheet" href="styles/themes.css">
+  <link rel="stylesheet" href="styles/app.css">
+  <link rel="stylesheet" href="styles/preview.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="toolbar-left"></div>
+    <div class="toolbar-center">
+      <span class="file-title" id="fileTitle">MD reader</span>
+    </div>
+    <div class="toolbar-right">
+      <button id="modeToggle" class="toolbar-btn mode-btn" title="Toggle Edit Mode (Cmd+E)" style="display: none;">
+        <span class="btn-icon" id="modeIcon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M11.5 1.5L14.5 4.5L5 14H2V11L11.5 1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="btn-label" id="modeLabel">Edit</span>
+      </button>
+      <button id="themeToggle" class="toolbar-btn theme-btn" title="Toggle Theme (Cmd+Shift+T)">
+        <span class="btn-icon" id="themeIcon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" id="sunIcon">
+            <circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M8 1.5V3M8 13V14.5M1.5 8H3M13 8H14.5M3.4 3.4L4.5 4.5M11.5 11.5L12.6 12.6M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" id="moonIcon" style="display:none;">
+            <path d="M14 9.5A6.5 6.5 0 016.5 2 5.5 5.5 0 1014 9.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </button>
+    </div>
+  </header>
+
+  <div id="appContainer" class="app-container">
+    <!-- Welcome screen -->
+    <div id="welcomeScreen" class="welcome-screen">
+      <div class="welcome-card">
+        <div class="welcome-icon">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <rect x="6" y="4" width="36" height="40" rx="4" stroke="currentColor" stroke-width="2.5"/>
+            <path d="M14 16H34M14 24H30M14 32H26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h1 class="welcome-title">MD reader</h1>
+        <p class="welcome-subtitle">Open a Markdown file to start reading</p>
+        <button id="openFileBtn" class="welcome-btn">Open File</button>
+        <p class="welcome-hint">or press Cmd+O</p>
+      </div>
+    </div>
+
+    <!-- Left sidebar: document tabs -->
+    <aside id="sidebar" class="sidebar">
+      <div id="documentsList" class="documents-list"></div>
+    </aside>
+
+    <!-- Main content area -->
+    <div id="mainContent" class="main-content">
+      <!-- Editor pane (hidden in read mode) -->
+      <div id="editorPane" class="editor-pane">
+        <div id="editorContainer" class="editor-container"></div>
+      </div>
+
+      <!-- Divider -->
+      <div id="divider" class="divider"></div>
+
+      <!-- Preview pane -->
+      <div id="previewPane" class="preview-pane" style="display: none;">
+        <div id="previewContent" class="preview-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="scripts/preview.js"></script>
+  <script src="scripts/editor.js"></script>
+  <script src="scripts/theme.js"></script>
+  <script src="scripts/app.js"></script>
+</body>
+</html>

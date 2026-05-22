@@ -1,0 +1,81 @@
+/* ==========================================
+   MD reader — Theme Variables (Light + Dark)
+   ========================================== */
+
+/* Light Theme (Default) — Soft grays, eye-friendly */
+[data-theme="light"] {
+  --bg-primary:        #F5F5F5;
+  --bg-secondary:      #EBEBEB;
+  --bg-editor:         #FAFAFA;
+  --bg-preview:        #FFFFFF;
+
+  --text-primary:      #333333;
+  --text-secondary:    #666666;
+  --text-muted:        #999999;
+
+  --border:            #E0E0E0;
+  --accent:            #4A90D9;
+  --accent-hover:      #357ABD;
+
+  --toolbar-bg:        #EBEBEB;
+  --toolbar-text:      #555555;
+  --btn-bg:            #DEDEDE;
+  --btn-hover:         #D0D0D0;
+  --btn-active:        #4A90D9;
+  --btn-active-text:   #FFFFFF;
+
+  --code-bg:           #F0F0F0;
+  --code-block-bg:     #F8F8F8;
+
+  --blockquote-border: #D0D0D0;
+  --blockquote-text:   #666666;
+  --table-border:      #E0E0E0;
+  --table-stripe:      #F9F9F9;
+
+  --shadow:            0 1px 3px rgba(0,0,0,0.08);
+  --scrollbar-thumb:   #C0C0C0;
+  --scrollbar-track:   transparent;
+
+  --welcome-card-bg:   #FFFFFF;
+  --divider-bg:        #D8D8D8;
+  --divider-hover:     #BBBBBB;
+}
+
+/* Dark Theme */
+[data-theme="dark"] {
+  --bg-primary:        #1E1E1E;
+  --bg-secondary:      #252525;
+  --bg-editor:         #1E1E1E;
+  --bg-preview:        #222222;
+
+  --text-primary:      #D4D4D4;
+  --text-secondary:    #AAAAAA;
+  --text-muted:        #777777;
+
+  --border:            #333333;
+  --accent:            #6DB3F2;
+  --accent-hover:      #89C4F4;
+
+  --toolbar-bg:        #2D2D2D;
+  --toolbar-text:      #CCCCCC;
+  --btn-bg:            #383838;
+  --btn-hover:         #444444;
+  --btn-active:        #6DB3F2;
+  --btn-active-text:   #1E1E1E;
+
+  --code-bg:           #2D2D2D;
+  --code-block-bg:     #1A1A1A;
+
+  --blockquote-border: #444444;
+  --blockquote-text:   #AAAAAA;
+  --table-border:      #333333;
+  --table-stripe:      #282828;
+
+  --shadow:            0 1px 3px rgba(0,0,0,0.3);
+  --scrollbar-thumb:   #555555;
+  --scrollbar-track:   transparent;
+
+  --welcome-card-bg:   #2A2A2A;
+  --divider-bg:        #444444;
+  --divider-hover:     #555555;
+}
