@@ -1,6 +1,17 @@
-const { Menu, app } = require('electron');
+const { Menu, app, BrowserWindow } = require('electron');
 
-function createMenu(mainWindow) {
+function getTargetWindow() {
+  return BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
+}
+
+function sendMenuAction(action, payload) {
+  const mainWindow = getTargetWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('menu:action', { action, payload });
+  }
+}
+
+function createMenu() {
   const template = [
     {
       label: app.name,
@@ -18,34 +29,36 @@ function createMenu(mainWindow) {
       label: 'File',
       submenu: [
         {
+          label: 'New',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => sendMenuAction('new'),
+        },
+        {
           label: 'Open...',
           accelerator: 'CmdOrCtrl+O',
-          click: () => {
-            if (mainWindow) {
-              mainWindow.webContents.send('menu:action', 'open');
-            }
-          },
+          click: () => sendMenuAction('open'),
         },
+        {
+          label: 'Open Recent',
+          role: 'recentDocuments', // macOS system-managed list; clicks fire app 'open-file'
+        },
+        { type: 'separator' },
         {
           label: 'Save',
           accelerator: 'CmdOrCtrl+S',
-          click: () => {
-            if (mainWindow) {
-              mainWindow.webContents.send('menu:action', 'save');
-            }
-          },
+          click: () => sendMenuAction('save'),
         },
         {
           label: 'Save As...',
           accelerator: 'CmdOrCtrl+Shift+S',
-          click: () => {
-            if (mainWindow) {
-              mainWindow.webContents.send('menu:action', 'save-as');
-            }
-          },
+          click: () => sendMenuAction('save-as'),
         },
         { type: 'separator' },
-        { role: 'close' },
+        {
+          label: 'Close Document',
+          accelerator: 'CmdOrCtrl+W',
+          click: () => sendMenuAction('close-document'),
+        },
       ],
     },
     {
@@ -66,20 +79,12 @@ function createMenu(mainWindow) {
         {
           label: 'Toggle Edit Mode',
           accelerator: 'CmdOrCtrl+E',
-          click: () => {
-            if (mainWindow) {
-              mainWindow.webContents.send('menu:action', 'toggle-mode');
-            }
-          },
+          click: () => sendMenuAction('toggle-mode'),
         },
         {
           label: 'Toggle Theme',
           accelerator: 'CmdOrCtrl+Shift+T',
-          click: () => {
-            if (mainWindow) {
-              mainWindow.webContents.send('menu:action', 'toggle-theme');
-            }
-          },
+          click: () => sendMenuAction('toggle-theme'),
         },
         { type: 'separator' },
         { role: 'reload' },

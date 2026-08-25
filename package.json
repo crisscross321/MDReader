@@ -5,9 +5,10 @@
   "license": "MIT",
   "main": "src/main/main.js",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --mac",
-    "pack": "electron-builder --mac --dir"
+    "build:renderer": "esbuild src/renderer/scripts/preview.js src/renderer/scripts/editor.js --bundle --format=iife --outdir=src/renderer/dist --log-level=warning",
+    "start": "npm run build:renderer && electron .",
+    "build": "npm run build:renderer && electron-builder --mac",
+    "pack": "npm run build:renderer && electron-builder --mac --dir"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",
@@ -25,7 +26,8 @@
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.28.1"
   },
   "build": {
     "appId": "com.mdreader.app",
@@ -40,8 +42,7 @@
       "darkModeSupport": true
     },
     "files": [
-      "src/**/*",
-      "node_modules/**/*"
+      "src/**/*"
     ],
     "fileAssociations": [
       {

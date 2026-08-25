@@ -187,6 +187,117 @@
   padding: 0;
 }
 
+/* ---- Syntax token colors (no external hljs stylesheet — kept in sync
+       with the GitHub light palette, with a dark variant below) ---- */
+.preview-content .hljs-comment,
+.preview-content .hljs-quote {
+  color: #6a737d;
+  font-style: italic;
+}
+.preview-content .hljs-keyword,
+.preview-content .hljs-selector-tag,
+.preview-content .hljs-literal,
+.preview-content .hljs-type,
+.preview-content .hljs-section,
+.preview-content .hljs-deletion {
+  color: #d73a49;
+}
+.preview-content .hljs-string,
+.preview-content .hljs-regexp,
+.preview-content .hljs-addition,
+.preview-content .hljs-attribute,
+.preview-content .hljs-meta .hljs-string {
+  color: #032f62;
+}
+.preview-content .hljs-number,
+.preview-content .hljs-symbol,
+.preview-content .hljs-bullet,
+.preview-content .hljs-link {
+  color: #005cc5;
+}
+.preview-content .hljs-title,
+.preview-content .hljs-name,
+.preview-content .hljs-function .hljs-title {
+  color: #6f42c1;
+}
+.preview-content .hljs-attr,
+.preview-content .hljs-variable,
+.preview-content .hljs-template-variable,
+.preview-content .hljs-selector-attr,
+.preview-content .hljs-selector-class,
+.preview-content .hljs-selector-id,
+.preview-content .hljs-selector-pseudo {
+  color: #005cc5;
+}
+.preview-content .hljs-built_in,
+.preview-content .hljs-builtin-name,
+.preview-content .hljs-params {
+  color: #e36209;
+}
+.preview-content .hljs-emphasis {
+  font-style: italic;
+}
+.preview-content .hljs-strong {
+  font-weight: 600;
+}
+.preview-content .hljs-meta {
+  color: #6a737d;
+}
+.preview-content .hljs-tag {
+  color: #22863a;
+}
+
+[data-theme="dark"] .preview-content .hljs-comment,
+[data-theme="dark"] .preview-content .hljs-quote {
+  color: #8b949e;
+}
+[data-theme="dark"] .preview-content .hljs-keyword,
+[data-theme="dark"] .preview-content .hljs-selector-tag,
+[data-theme="dark"] .preview-content .hljs-literal,
+[data-theme="dark"] .preview-content .hljs-type,
+[data-theme="dark"] .preview-content .hljs-section,
+[data-theme="dark"] .preview-content .hljs-deletion {
+  color: #ff7b72;
+}
+[data-theme="dark"] .preview-content .hljs-string,
+[data-theme="dark"] .preview-content .hljs-regexp,
+[data-theme="dark"] .preview-content .hljs-addition,
+[data-theme="dark"] .preview-content .hljs-attribute,
+[data-theme="dark"] .preview-content .hljs-meta .hljs-string {
+  color: #a5d6ff;
+}
+[data-theme="dark"] .preview-content .hljs-number,
+[data-theme="dark"] .preview-content .hljs-symbol,
+[data-theme="dark"] .preview-content .hljs-bullet,
+[data-theme="dark"] .preview-content .hljs-link {
+  color: #79c0ff;
+}
+[data-theme="dark"] .preview-content .hljs-title,
+[data-theme="dark"] .preview-content .hljs-name,
+[data-theme="dark"] .preview-content .hljs-function .hljs-title {
+  color: #d2a8ff;
+}
+[data-theme="dark"] .preview-content .hljs-attr,
+[data-theme="dark"] .preview-content .hljs-variable,
+[data-theme="dark"] .preview-content .hljs-template-variable,
+[data-theme="dark"] .preview-content .hljs-selector-attr,
+[data-theme="dark"] .preview-content .hljs-selector-class,
+[data-theme="dark"] .preview-content .hljs-selector-id,
+[data-theme="dark"] .preview-content .hljs-selector-pseudo {
+  color: #79c0ff;
+}
+[data-theme="dark"] .preview-content .hljs-built_in,
+[data-theme="dark"] .preview-content .hljs-builtin-name,
+[data-theme="dark"] .preview-content .hljs-params {
+  color: #ffa657;
+}
+[data-theme="dark"] .preview-content .hljs-meta {
+  color: #8b949e;
+}
+[data-theme="dark"] .preview-content .hljs-tag {
+  color: #7ee787;
+}
+
 /* ---- First heading — no top margin ---- */
 .preview-content > h1:first-child,
 .preview-content > h2:first-child,

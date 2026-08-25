@@ -358,6 +358,9 @@ body {
   flex: 1;
   overflow-y: auto;
   background: var(--bg-preview);
+  /* positioned → becomes offsetParent so anchor scroll sync can compute
+     element offsets relative to this scroll container */
+  position: relative;
 }
 
 /* Scrollbar styling */
@@ -397,4 +400,111 @@ body {
   background: var(--bg-primary);
   padding: 12px 24px;
   border-radius: 10px;
+}
+
+/* ---- Search Bar (read mode) ---- */
+.search-bar {
+  position: fixed;
+  top: 8px;
+  right: 16px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--welcome-card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  box-shadow: var(--shadow);
+}
+
+.search-input {
+  width: 200px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.search-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 44px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.search-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 3px 6px;
+  line-height: 1;
+}
+
+.search-btn:hover {
+  background: var(--btn-hover);
+  color: var(--text-primary);
+}
+
+.search-close {
+  font-size: 14px;
+}
+
+mark.search-hit {
+  background: rgba(234, 159, 39, 0.45);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+mark.search-hit.current {
+  background: rgba(234, 159, 39, 0.85);
+  color: #1E1E1E;
+}
+
+/* ---- Toast ---- */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-size: 12px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  max-width: 420px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast.show {
+  opacity: 0.95;
+  transform: translateY(0);
+}
+
+/* ---- Resizing state ---- */
+body.resizing,
+body.resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }

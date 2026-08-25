@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: https: http:; font-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
   <title>MD reader</title>
   <link rel="stylesheet" href="styles/themes.css">
   <link rel="stylesheet" href="styles/app.css">
@@ -15,6 +16,14 @@
       <span class="file-title" id="fileTitle">MD reader</span>
     </div>
     <div class="toolbar-right">
+      <button id="searchToggle" class="toolbar-btn search-toggle" title="Find in document (Cmd+F)" style="display: none;">
+        <span class="btn-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </span>
+      </button>
       <button id="modeToggle" class="toolbar-btn mode-btn" title="Toggle Edit Mode (Cmd+E)" style="display: none;">
         <span class="btn-icon" id="modeIcon">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -76,8 +85,20 @@
     </div>
   </div>
 
-  <script src="scripts/preview.js"></script>
-  <script src="scripts/editor.js"></script>
+  <!-- Find bar (read mode) -->
+  <div id="searchBar" class="search-bar" style="display: none;">
+    <input id="searchInput" class="search-input" type="text" placeholder="Find in document…">
+    <span id="searchCount" class="search-count"></span>
+    <button id="searchPrev" class="search-btn" title="Previous match (Shift+Enter)">▲</button>
+    <button id="searchNext" class="search-btn" title="Next match (Enter)">▼</button>
+    <button id="searchClose" class="search-btn search-close" title="Close (Esc)">×</button>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="dist/preview.js"></script>
+  <script src="dist/editor.js"></script>
   <script src="scripts/theme.js"></script>
   <script src="scripts/app.js"></script>
 </body>
