@@ -7,6 +7,13 @@
 const markdownIt = require('markdown-it');
 const { EditorState } = require('@codemirror/state');
 const { history, undo, undoDepth } = require('@codemirror/commands');
+const { markdownLanguage } = require('@codemirror/lang-markdown');
+const { getStyleTags } = require('@lezer/highlight');
+const {
+  markdownEditorLanguage,
+  markdownHighlighting,
+  markdownHighlightStyle,
+} = require('../src/renderer/scripts/editorHighlight');
 
 let failures = 0;
 
@@ -240,6 +247,113 @@ console.log('\n== Undo-history fix (document switching must reset history) ==');
   let target = { state: fresh, dispatch: () => {} };
   const undid = undo(target);
   check('undo on rebuilt state is a no-op', undid === false, `undid=${undid}`);
+}
+
+console.log('\n== Editor markdown mark highlighting ==');
+{
+  const sample = [
+    '# Title',
+    '',
+    'This is **bold** and a [link](https://example.com).',
+    '',
+    '> quote',
+    '',
+    '- item',
+    '',
+    '`code`',
+    '',
+    '| a | b |',
+    '|---|---|',
+    '| 1 | 2 |',
+    '',
+    '~~strike~~',
+  ].join('\n');
+
+  const defaultNames = [];
+  markdownLanguage.parser.parse(sample).iterate({
+    enter(node) {
+      defaultNames.push(node.name);
+    },
+  });
+  check('default parser emits HeaderMark', defaultNames.includes('HeaderMark'));
+  check('default parser emits EmphasisMark', defaultNames.includes('EmphasisMark'));
+
+  const languageSupport = markdownEditorLanguage();
+  const tree = languageSupport.language.parser.parse(sample);
+  const nodesByName = {};
+  tree.iterate({
+    enter(node) {
+      if (!nodesByName[node.name]) nodesByName[node.name] = node.node;
+    },
+  });
+
+  ['HeaderMark', 'EmphasisMark', 'LinkMark', 'QuoteMark', 'ListMark', 'CodeMark'].forEach(
+    (name) => {
+      check(`extended parser emits ${name}`, Boolean(nodesByName[name]));
+    }
+  );
+
+  const highlighter = markdownHighlightStyle();
+  function classFor(name) {
+    const node = nodesByName[name];
+    if (!node) return null;
+    const info = getStyleTags(node);
+    if (!info) return null;
+    return highlighter.style(info.tags);
+  }
+
+  const headerClass = classFor('HeaderMark');
+  const emphasisClass = classFor('EmphasisMark');
+  const linkClass = classFor('LinkMark');
+  const quoteClass = classFor('QuoteMark');
+  const listClass = classFor('ListMark');
+  const codeClass = classFor('CodeMark');
+
+  check(
+    'heading mark highlight class is set',
+    Boolean(headerClass),
+    `class=${headerClass}`
+  );
+  check(
+    'heading and emphasis marks use different highlight classes',
+    Boolean(headerClass && emphasisClass && headerClass !== emphasisClass),
+    `header=${headerClass} emphasis=${emphasisClass}`
+  );
+  check(
+    'link and quote marks use different highlight classes',
+    Boolean(linkClass && quoteClass && linkClass !== quoteClass),
+    `link=${linkClass} quote=${quoteClass}`
+  );
+  check(
+    'list and code marks use different highlight classes',
+    Boolean(listClass && codeClass && listClass !== codeClass),
+    `list=${listClass} code=${codeClass}`
+  );
+
+  const specColors = highlighter.specs
+    .map((spec) => spec.color)
+    .filter((color) => typeof color === 'string');
+  check(
+    'highlight colors use theme CSS variables',
+    specColors.some((c) => c.includes('--md-mark-heading')) &&
+      specColors.some((c) => c.includes('--md-mark-emphasis')),
+    `colors=${specColors.join(',')}`
+  );
+
+  let created = null;
+  try {
+    created = EditorState.create({
+      doc: sample,
+      extensions: [languageSupport, markdownHighlighting()],
+    });
+  } catch (err) {
+    created = err;
+  }
+  check(
+    'editor extensions create an EditorState',
+    created && created.doc && created.doc.toString() === sample,
+    created instanceof Error ? created.message : ''
+  );
 }
 
 console.log(failures === 0 ? '\nAll checks passed ✔' : `\n${failures} check(s) FAILED ✘`);

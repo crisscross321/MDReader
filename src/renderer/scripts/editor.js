@@ -16,7 +16,6 @@
     drawSelection,
   } = require('@codemirror/view');
   const { EditorState } = require('@codemirror/state');
-  const { markdown, markdownLanguage } = require('@codemirror/lang-markdown');
   const {
     defaultKeymap,
     history,
@@ -24,13 +23,15 @@
     indentWithTab,
   } = require('@codemirror/commands');
   const {
-    syntaxHighlighting,
-    defaultHighlightStyle,
     indentOnInput,
     bracketMatching,
     foldGutter,
     foldKeymap,
   } = require('@codemirror/language');
+  const {
+    markdownEditorLanguage,
+    markdownHighlighting,
+  } = require('./editorHighlight');
   const {
     highlightSelectionMatches,
     searchKeymap,
@@ -113,8 +114,8 @@
         foldGutter(),
         history(),
         highlightSelectionMatches(),
-        markdown({ base: markdownLanguage }),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        markdownEditorLanguage(),
+        markdownHighlighting(),
         lightTheme,
         keymap.of([
           ...closeBracketsKeymap,
