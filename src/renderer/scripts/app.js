@@ -48,12 +48,6 @@
     };
   }
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
   function showToast(message) {
     const toast = document.createElement('div');
     toast.className = 'toast';
@@ -85,58 +79,164 @@
     state.editorDocumentIndex = state.mode === 'edit' ? state.activeIndex : -1;
   }
 
-  // ---- Sidebar Rendering ----
+  // ---- Sidebar ----
+  // Document identity is a monotonic id. Array indexes go stale across splice,
+  // and several Untitled docs share a null path, so neither can key the DOM.
 
-  function renderSidebar() {
-    documentsList.innerHTML = '';
-    state.documents.forEach((doc, index) => {
-      const item = document.createElement('div');
-      item.className = 'doc-item' +
-        (index === state.activeIndex ? ' active' : '') +
-        (doc.isDirty ? ' dirty' : '');
-      item.dataset.index = index;
+  let nextDocumentId = 1;
+  const docViews = new WeakMap();
 
-      const fileName = doc.path
-        ? window.mdReader.basename(doc.path)
-        : 'Untitled';
-      const time = new Date(doc.openedAt).toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      // Only scan the head of the document for the snippet — O(1) per doc
-      const lines = doc.content.slice(0, 1500).split('\n');
-      const previewLine = lines.find((l) => l.trim() && !l.startsWith('#')) || '';
-      const snippet = previewLine.substring(0, 30).trim() || '';
+  function createDocumentRecord({ path, content, isDirty = false }) {
+    return {
+      id: nextDocumentId++,
+      path,
+      content,
+      isDirty,
+      openedAt: Date.now(),
+    };
+  }
 
-      item.innerHTML = `
-        <span class="doc-item-dirty"></span>
-        <div class="doc-item-info">
-          <div class="doc-item-name">${escapeHtml(fileName)}</div>
-          <div class="doc-item-meta">${time}${snippet ? ' &nbsp; ' + escapeHtml(snippet) : ''}</div>
-        </div>
-        <button class="doc-item-close" data-close-index="${index}" title="Close">&times;</button>
-      `;
-
-      documentsList.appendChild(item);
+  function formatOpenedAt(openedAt) {
+    return new Date(openedAt).toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
     });
   }
 
-  // Event delegation for sidebar clicks (survives DOM rebuild)
-  documentsList.addEventListener('click', (e) => {
-    // Close button
-    const closeBtn = e.target.closest('[data-close-index]');
-    if (closeBtn) {
-      e.stopPropagation();
-      const idx = parseInt(closeBtn.dataset.closeIndex, 10);
-      closeDocument(idx);
+  // Snippet only looks at the first 1500 chars. Cache it until that head changes.
+  function viewFor(doc) {
+    let view = docViews.get(doc);
+    if (!view) {
+      view = {
+        fileName: null,
+        timeLabel: formatOpenedAt(doc.openedAt),
+        snippet: '',
+        snippetHead: null,
+      };
+      docViews.set(doc, view);
+    }
+
+    const fileName = doc.path ? window.mdReader.basename(doc.path) : 'Untitled';
+    if (view.fileName !== fileName) view.fileName = fileName;
+
+    const head = doc.content.slice(0, 1500);
+    if (view.snippetHead !== head) {
+      view.snippetHead = head;
+      const previewLine = head.split('\n').find((line) => line.trim() && !line.startsWith('#')) || '';
+      view.snippet = previewLine.substring(0, 30).trim();
+    }
+    return view;
+  }
+
+  function metaText(view) {
+    return view.snippet ? `${view.timeLabel} \u00A0 ${view.snippet}` : view.timeLabel;
+  }
+
+  function paintDocItem(item, doc) {
+    const view = viewFor(doc);
+    item.classList.toggle('active', state.documents[state.activeIndex] === doc);
+    item.classList.toggle('dirty', !!doc.isDirty);
+
+    const nameEl = item.querySelector('.doc-item-name');
+    if (nameEl.textContent !== view.fileName) nameEl.textContent = view.fileName;
+
+    const meta = metaText(view);
+    const metaEl = item.querySelector('.doc-item-meta');
+    if (metaEl.textContent !== meta) metaEl.textContent = meta;
+  }
+
+  function createDocItem(doc) {
+    const item = document.createElement('div');
+    item.classList.add('doc-item');
+    item.dataset.docId = String(doc.id);
+
+    const dirty = document.createElement('span');
+    dirty.classList.add('doc-item-dirty');
+
+    const info = document.createElement('div');
+    info.classList.add('doc-item-info');
+
+    const name = document.createElement('div');
+    name.classList.add('doc-item-name');
+
+    const meta = document.createElement('div');
+    meta.classList.add('doc-item-meta');
+
+    const close = document.createElement('button');
+    close.classList.add('doc-item-close');
+    close.type = 'button';
+    close.title = 'Close';
+    close.textContent = '\u00D7';
+
+    info.append(name, meta);
+    item.append(dirty, info, close);
+    paintDocItem(item, doc);
+    return item;
+  }
+
+  function documentIndexById(id) {
+    const key = String(id);
+    return state.documents.findIndex((doc) => String(doc.id) === key);
+  }
+
+  // Reconcile the list in place so open/close/switch/save do not reset scrollTop.
+  function syncSidebar() {
+    const scrollTop = documentsList.scrollTop;
+    const existing = new Map();
+    for (const child of Array.from(documentsList.children)) {
+      if (child.classList.contains('doc-item') && child.dataset.docId) {
+        existing.set(child.dataset.docId, child);
+      }
+    }
+
+    const keep = new Set();
+    state.documents.forEach((doc, index) => {
+      const id = String(doc.id);
+      keep.add(id);
+      let item = existing.get(id);
+      if (!item) {
+        item = createDocItem(doc);
+        existing.set(id, item);
+      } else {
+        paintDocItem(item, doc);
+      }
+      const anchor = documentsList.children[index];
+      if (anchor !== item) {
+        documentsList.insertBefore(item, anchor || null);
+      }
+    });
+
+    for (const [id, item] of existing) {
+      if (!keep.has(id)) item.remove();
+    }
+
+    if (documentsList.scrollTop !== scrollTop) {
+      documentsList.scrollTop = scrollTop;
+    }
+  }
+
+  // Edit ticks only repaint the row whose content changed.
+  function patchSidebarDocument(doc) {
+    const item = documentsList.querySelector(`.doc-item[data-doc-id="${doc.id}"]`);
+    if (!item) {
+      syncSidebar();
       return;
     }
-    // Item click → switch document
+    paintDocItem(item, doc);
+  }
+
+  documentsList.addEventListener('click', (e) => {
     const item = e.target.closest('.doc-item');
-    if (item && item.dataset.index !== undefined) {
-      const idx = parseInt(item.dataset.index, 10);
-      switchDocument(idx);
+    if (!item || item.dataset.docId === undefined) return;
+    const index = documentIndexById(item.dataset.docId);
+    if (index < 0) return;
+
+    if (e.target.closest('.doc-item-close')) {
+      e.stopPropagation();
+      closeDocument(index);
+      return;
     }
+    switchDocument(index);
   });
 
   // ---- Document Management ----
@@ -162,12 +262,10 @@
         continue;
       }
 
-      state.documents.push({
+      state.documents.push(createDocumentRecord({
         path: data.path,
         content: data.content,
-        isDirty: false,
-        openedAt: Date.now(),
-      });
+      }));
       lastIndex = state.documents.length - 1;
       addedAny = true;
     }
@@ -181,7 +279,7 @@
     showDocumentUI();
     setMode('read');
     displayActiveDocument();
-    renderSidebar();
+    syncSidebar();
   }
 
   function showDocumentUI() {
@@ -201,7 +299,7 @@
     state.docVersion += 1;
     setMode('read');
     displayActiveDocument();
-    renderSidebar();
+    syncSidebar();
   }
 
   async function closeDocument(index) {
@@ -233,7 +331,7 @@
       window.mdReader.setWindowTitle('MD reader');
       previewContent.innerHTML = '';
       appContainer.classList.remove('edit-mode');
-      renderSidebar();
+      syncSidebar();
       return;
     }
 
@@ -245,7 +343,7 @@
       state.activeIndex--;
     }
 
-    renderSidebar();
+    syncSidebar();
   }
 
   async function closeActiveDocument() {
@@ -301,19 +399,17 @@
   function newDocument() {
     saveCurrentDocState();
 
-    state.documents.push({
+    state.documents.push(createDocumentRecord({
       path: null,
       content: '',
-      isDirty: false,
-      openedAt: Date.now(),
-    });
+    }));
     state.activeIndex = state.documents.length - 1;
     state.docVersion += 1;
 
     showDocumentUI();
     setMode('read');
     displayActiveDocument();
-    renderSidebar();
+    syncSidebar();
   }
 
   async function openFile() {
@@ -349,7 +445,7 @@
         if (result && result.success) {
           doc.isDirty = false;
           if (state.documents[state.activeIndex] === doc) updateTitle();
-          renderSidebar();
+          syncSidebar();
         }
       }
       if (doc.isDirty) return false;
@@ -371,7 +467,7 @@
       doc.content = content;
       doc.isDirty = false;
       updateTitle();
-      renderSidebar();
+      syncSidebar();
       showToast('Saved');
     }
   }
@@ -389,7 +485,7 @@
       doc.content = content;
       doc.isDirty = false;
       updateTitle();
-      renderSidebar();
+      syncSidebar();
       showToast('Saved');
     }
   }
@@ -436,7 +532,7 @@
     if (docIndex === state.activeIndex) {
       displayActiveDocument();
     }
-    renderSidebar();
+    syncSidebar();
   }
 
   // ---- Mode Switching ----
@@ -630,7 +726,7 @@
           reapplySearch();
         }
 
-        renderSidebar();
+        patchSidebarDocument(doc);
       }
     }, 200);
 
