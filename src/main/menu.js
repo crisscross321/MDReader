@@ -77,6 +77,11 @@ function createMenu() {
       label: 'View',
       submenu: [
         {
+          label: 'Toggle Sidebar',
+          accelerator: 'CmdOrCtrl+B',
+          click: () => sendMenuAction('toggle-sidebar'),
+        },
+        {
           label: 'Toggle Edit Mode',
           accelerator: 'CmdOrCtrl+E',
           click: () => sendMenuAction('toggle-mode'),

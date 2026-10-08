@@ -11,7 +11,16 @@
 </head>
 <body>
   <header class="toolbar">
-    <div class="toolbar-left"></div>
+    <div class="toolbar-left">
+      <button id="sidebarToggle" class="toolbar-btn sidebar-toggle" title="Hide Sidebar (Cmd+B)" style="display: none;" aria-pressed="false">
+        <span class="btn-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M6 2.5V13.5" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </span>
+      </button>
+    </div>
     <div class="toolbar-center">
       <span class="file-title" id="fileTitle">MD reader</span>
     </div>

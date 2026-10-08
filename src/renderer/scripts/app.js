@@ -17,7 +17,9 @@
   // DOM elements
   const appContainer = document.getElementById('appContainer');
   const welcomeScreen = document.getElementById('welcomeScreen');
+  const mainContent = document.getElementById('mainContent');
   const sidebar = document.getElementById('sidebar');
+  const sidebarToggle = document.getElementById('sidebarToggle');
   const documentsList = document.getElementById('documentsList');
   const editorPane = document.getElementById('editorPane');
   const divider = document.getElementById('divider');
@@ -80,6 +82,37 @@
   }
 
   // ---- Sidebar ----
+  // The document list is not resident. It starts collapsed so the reading
+  // area keeps the full width, and it does not stay open across launches.
+  // Expand and collapse are manual (toolbar button or Cmd+B).
+  // Choosing a document, or clicking back into the article, collapses it.
+
+  let sidebarCollapsed = true;
+
+  function applySidebarState() {
+    sidebar.classList.toggle('collapsed', sidebarCollapsed);
+    sidebar.setAttribute('aria-hidden', sidebarCollapsed ? 'true' : 'false');
+    if (sidebarCollapsed) sidebar.setAttribute('inert', '');
+    else sidebar.removeAttribute('inert');
+    sidebarToggle.setAttribute('aria-pressed', sidebarCollapsed ? 'true' : 'false');
+    const label = sidebarCollapsed ? 'Show Sidebar (Cmd+B)' : 'Hide Sidebar (Cmd+B)';
+    sidebarToggle.title = label;
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    if (state.documents.length === 0) return;
+    sidebarCollapsed = collapsed;
+    applySidebarState();
+  }
+
+  function collapseSidebar() {
+    setSidebarCollapsed(true);
+  }
+
+  function toggleSidebar() {
+    setSidebarCollapsed(!sidebarCollapsed);
+  }
+
   // Document identity is a monotonic id. Array indexes go stale across splice,
   // and several Untitled docs share a null path, so neither can key the DOM.
 
@@ -237,6 +270,7 @@
       return;
     }
     switchDocument(index);
+    collapseSidebar();
   });
 
   // ---- Document Management ----
@@ -287,7 +321,9 @@
     previewPane.style.display = '';
     modeToggle.style.display = '';
     searchToggle.style.display = '';
+    sidebarToggle.style.display = '';
     sidebar.classList.add('visible');
+    applySidebarState();
   }
 
   function switchDocument(index) {
@@ -326,7 +362,10 @@
       previewPane.style.display = 'none';
       modeToggle.style.display = 'none';
       searchToggle.style.display = 'none';
+      sidebarToggle.style.display = 'none';
+      sidebarCollapsed = true;
       sidebar.classList.remove('visible');
+      applySidebarState();
       fileTitle.textContent = 'MD reader';
       window.mdReader.setWindowTitle('MD reader');
       previewContent.innerHTML = '';
@@ -966,6 +1005,11 @@
     themeToggle.addEventListener('click', () => window.MDReaderTheme.toggle());
     openFileBtn.addEventListener('click', openFile);
     searchToggle.addEventListener('click', toggleSearch);
+    sidebarToggle.addEventListener('click', toggleSidebar);
+    mainContent.addEventListener('mousedown', () => {
+      if (sidebarCollapsed || state.documents.length === 0) return;
+      collapseSidebar();
+    }, true);
 
     searchInput.addEventListener('input', () => highlightSearch(searchInput.value));
     searchInput.addEventListener('keydown', (e) => {
@@ -1006,6 +1050,9 @@
         case 'toggle-mode':
           toggleMode();
           break;
+        case 'toggle-sidebar':
+          toggleSidebar();
+          break;
         case 'toggle-theme':
           window.MDReaderTheme.toggle();
           break;
@@ -1030,6 +1077,7 @@
 
   function init() {
     window.MDReaderTheme.init();
+    applySidebarState();
     setupListeners();
     setupDragDrop();
     setupDividerDrag();

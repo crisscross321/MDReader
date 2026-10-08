@@ -106,6 +106,14 @@ function createElement(tag) {
     el._listeners = el._listeners || {};
     (el._listeners[type] = el._listeners[type] || []).push(fn);
   };
+  el.setAttribute = (name, value) => {
+    el._attrs = el._attrs || {};
+    el._attrs[name] = String(value);
+  };
+  el.removeAttribute = (name) => {
+    if (el._attrs) delete el._attrs[name];
+  };
+  el.getAttribute = (name) => (el._attrs && name in el._attrs ? el._attrs[name] : null);
 
   // Mirrors Chromium: wiping innerHTML drops scroll position.
   Object.defineProperty(el, 'innerHTML', {
@@ -206,6 +214,10 @@ function delay(ms) {
 }
 
 async function main() {
+  const sidebarEl = document.getElementById('sidebar');
+  const sidebarToggleEl = document.getElementById('sidebarToggle');
+  const mainContentEl = document.getElementById('mainContent');
+
   hooks.fileOpened({
     path: '/docs/file<img>.md',
     content: '# Title\n\nBody text that should appear\n',
@@ -214,6 +226,8 @@ async function main() {
     path: '/docs/second.md',
     content: 'Second file line\n',
   });
+  check('opening documents leaves the sidebar collapsed', sidebarEl.classList.contains('visible') && sidebarEl.classList.contains('collapsed'));
+  check('collapsed sidebar hides itself from assistive tech', sidebarEl.getAttribute('aria-hidden') === 'true');
 
   let rows = items();
   check('opens one row per document', rows.length === 2, `count=${rows.length}`);
@@ -297,6 +311,36 @@ async function main() {
   click(findDesc(items()[1], 'doc-item-close'));
   await flush();
   check('closing a middle row leaves the others in order', items()[0] === kept && items().includes(untitledB));
+
+  check('sidebar stays collapsed while reading', sidebarEl.classList.contains('collapsed'));
+
+  hooks.menu({ action: 'toggle-sidebar' });
+  check('toolbar toggle expands the sidebar', !sidebarEl.classList.contains('collapsed'));
+  check('expand clears the pressed state', sidebarToggleEl.getAttribute('aria-pressed') === 'false');
+  check('expanded sidebar is available to assistive tech', sidebarEl.getAttribute('aria-hidden') === 'false');
+
+  hooks.menu({ action: 'toggle-sidebar' });
+  check('toggling again collapses the sidebar', sidebarEl.classList.contains('collapsed'));
+  check('collapse marks the toolbar button pressed', sidebarToggleEl.getAttribute('aria-pressed') === 'true');
+
+  hooks.menu({ action: 'toggle-sidebar' });
+  click(items()[0]);
+  await flush();
+  check('choosing a document auto-collapses the sidebar', sidebarEl.classList.contains('collapsed'));
+
+  hooks.menu({ action: 'toggle-sidebar' });
+  click(items().find((row) => row.classList.contains('active')));
+  check('clicking the current document also auto-collapses', sidebarEl.classList.contains('collapsed'));
+
+  hooks.menu({ action: 'toggle-sidebar' });
+  const contentListeners = (mainContentEl._listeners && mainContentEl._listeners.mousedown) || [];
+  contentListeners.forEach((fn) => fn({ target: mainContentEl }));
+  check('clicking the article auto-collapses the sidebar', sidebarEl.classList.contains('collapsed'));
+
+  hooks.menu({ action: 'toggle-sidebar' });
+  click(findDesc(items()[0], 'doc-item-close'));
+  await flush();
+  check('closing a document leaves the sidebar open', !sidebarEl.classList.contains('collapsed'));
 }
 
 main().then(() => {
