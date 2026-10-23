@@ -82,6 +82,11 @@ function createMenu() {
           click: () => sendMenuAction('toggle-sidebar'),
         },
         {
+          label: 'Toggle Outline',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => sendMenuAction('toggle-outline'),
+        },
+        {
           label: 'Toggle Edit Mode',
           accelerator: 'CmdOrCtrl+E',
           click: () => sendMenuAction('toggle-mode'),

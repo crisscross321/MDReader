@@ -21,6 +21,9 @@
   const sidebar = document.getElementById('sidebar');
   const sidebarToggle = document.getElementById('sidebarToggle');
   const documentsList = document.getElementById('documentsList');
+  const outline = document.getElementById('outline');
+  const outlineToggle = document.getElementById('outlineToggle');
+  const outlineList = document.getElementById('outlineList');
   const editorPane = document.getElementById('editorPane');
   const divider = document.getElementById('divider');
   const previewPane = document.getElementById('previewPane');
@@ -82,10 +85,10 @@
   }
 
   // ---- Sidebar ----
-  // The document list is not resident. It starts collapsed so the reading
-  // area keeps the full width, and it does not stay open across launches.
-  // Expand and collapse are manual (toolbar button or Cmd+B).
-  // Choosing a document, or clicking back into the article, collapses it.
+  // The document list starts collapsed so reading keeps the full width.
+  // Choosing a file leaves it open, so several documents can be compared
+  // without reopening the list. It collapses on the next reading action:
+  // clicking into the article, following the outline, or toggling edit mode.
 
   let sidebarCollapsed = true;
 
@@ -111,6 +114,179 @@
 
   function toggleSidebar() {
     setSidebarCollapsed(!sidebarCollapsed);
+  }
+
+  // ---- Outline ----
+  // Headings come from the rendered preview, so setext headings and anything
+  // the preview hides (for example a title inside a code fence) stay in sync
+  // with what the reader actually sees.
+
+  const OUTLINE_STORAGE_KEY = 'md-reader-outline';
+  let outlineEntries = [];
+  let outlineActiveIndex = -1;
+  let outlineScrollRaf = null;
+
+  function readOutlineOpen() {
+    try {
+      return localStorage.getItem(OUTLINE_STORAGE_KEY) !== 'closed';
+    } catch (err) {
+      return true;
+    }
+  }
+
+  function writeOutlineOpen(open) {
+    try {
+      localStorage.setItem(OUTLINE_STORAGE_KEY, open ? 'open' : 'closed');
+    } catch (err) {
+      /* preference is session-only when storage is unavailable */
+    }
+  }
+
+  let outlineCollapsed = !readOutlineOpen();
+
+  function applyOutlineState() {
+    outline.classList.toggle('collapsed', outlineCollapsed);
+    outline.setAttribute('aria-hidden', outlineCollapsed ? 'true' : 'false');
+    if (outlineCollapsed) outline.setAttribute('inert', '');
+    else outline.removeAttribute('inert');
+    const open = !outlineCollapsed;
+    outlineToggle.setAttribute('aria-pressed', open ? 'true' : 'false');
+    const label = open ? 'Hide Outline (Cmd+Shift+O)' : 'Show Outline (Cmd+Shift+O)';
+    outlineToggle.title = label;
+    outlineToggle.setAttribute('aria-label', label);
+  }
+
+  function setOutlineCollapsed(collapsed) {
+    if (state.documents.length === 0) return;
+    outlineCollapsed = collapsed;
+    writeOutlineOpen(!collapsed);
+    applyOutlineState();
+  }
+
+  function toggleOutline() {
+    setOutlineCollapsed(!outlineCollapsed);
+  }
+
+  function headingLevel(el) {
+    const level = parseInt(String(el.tagName || '').slice(1), 10);
+    return Number.isFinite(level) ? level : 1;
+  }
+
+  function elementOffsetTop(el, container) {
+    let top = 0;
+    let node = el;
+    while (node && node !== container) {
+      top += node.offsetTop || 0;
+      node = node.offsetParent;
+    }
+    return top;
+  }
+
+  function viewTop(el) {
+    if (!el || typeof el.getBoundingClientRect !== 'function') return null;
+    return el.getBoundingClientRect().top;
+  }
+
+  function setOutlineCurrent(index) {
+    if (index === outlineActiveIndex) return;
+    outlineActiveIndex = index;
+    outlineEntries.forEach((entry, i) => {
+      const on = i === index;
+      entry.button.classList.toggle('active', on);
+      if (on) entry.button.setAttribute('aria-current', 'location');
+      else entry.button.removeAttribute('aria-current');
+    });
+    const active = outlineEntries[index] && outlineEntries[index].button;
+    if (!active || typeof active.getBoundingClientRect !== 'function') return;
+    if (typeof outlineList.getBoundingClientRect !== 'function') return;
+    const listRect = outlineList.getBoundingClientRect();
+    const btnRect = active.getBoundingClientRect();
+    if (btnRect.top < listRect.top) {
+      outlineList.scrollTop -= listRect.top - btnRect.top;
+    } else if (btnRect.bottom > listRect.bottom) {
+      outlineList.scrollTop += btnRect.bottom - listRect.bottom;
+    }
+  }
+
+  function updateOutlineActive() {
+    if (outlineEntries.length === 0) return;
+    const paneTop = viewTop(previewPane);
+    if (paneTop === null) {
+      setOutlineCurrent(0);
+      return;
+    }
+    const atBottom = previewPane.scrollTop + previewPane.clientHeight >= previewPane.scrollHeight - 2;
+    if (atBottom) {
+      setOutlineCurrent(outlineEntries.length - 1);
+      return;
+    }
+    let current = 0;
+    for (let i = 0; i < outlineEntries.length; i++) {
+      const top = viewTop(outlineEntries[i].heading);
+      if (top === null) {
+        setOutlineCurrent(0);
+        return;
+      }
+      if (top <= paneTop + 32) current = i;
+      else break;
+    }
+    setOutlineCurrent(current);
+  }
+
+  function refreshOutline() {
+    const scrollTop = outlineList.scrollTop;
+    outlineEntries = [];
+    outlineActiveIndex = -1;
+    while (outlineList.firstChild) outlineList.removeChild(outlineList.firstChild);
+    if (state.activeIndex < 0) return;
+
+    const headings = Array.from(previewContent.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+      .filter((heading) => (heading.textContent || '').trim());
+
+    if (headings.length === 0) {
+      const empty = document.createElement('div');
+      empty.classList.add('outline-empty');
+      empty.textContent = 'No headings';
+      outlineList.appendChild(empty);
+      return;
+    }
+
+    const minLevel = headings.reduce((min, heading) => Math.min(min, headingLevel(heading)), 6);
+    headings.forEach((heading) => {
+      const level = headingLevel(heading);
+      const label = heading.textContent.replace(/\s+/g, ' ').trim();
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.classList.add('outline-item');
+      button.textContent = label;
+      button.title = label;
+      button.style.paddingLeft = (12 + (level - minLevel) * 12) + 'px';
+      button.dataset.level = String(level);
+      outlineList.appendChild(button);
+      outlineEntries.push({ heading, button });
+    });
+    outlineList.scrollTop = scrollTop;
+    updateOutlineActive();
+  }
+
+  function activateOutlineEntry(index) {
+    const entry = outlineEntries[index];
+    if (!entry) return;
+    previewPane.scrollTop = Math.max(0, elementOffsetTop(entry.heading, previewPane) - 16);
+    const lineNo = parseInt(entry.heading.getAttribute('data-source-line') || '', 10);
+    if (state.mode === 'edit' && state.editorInitialized && Number.isFinite(lineNo)) {
+      window.MDReaderEditor.scrollToLine(lineNo + 1);
+    }
+    setOutlineCurrent(index);
+    collapseSidebar();
+  }
+
+  function onPreviewScrollForOutline() {
+    if (outlineScrollRaf) return;
+    outlineScrollRaf = requestAnimationFrame(() => {
+      outlineScrollRaf = null;
+      updateOutlineActive();
+    });
   }
 
   // Document identity is a monotonic id. Array indexes go stale across splice,
@@ -270,7 +446,6 @@
       return;
     }
     switchDocument(index);
-    collapseSidebar();
   });
 
   // ---- Document Management ----
@@ -322,8 +497,11 @@
     modeToggle.style.display = '';
     searchToggle.style.display = '';
     sidebarToggle.style.display = '';
+    outlineToggle.style.display = '';
     sidebar.classList.add('visible');
+    outline.classList.add('visible');
     applySidebarState();
+    applyOutlineState();
   }
 
   function switchDocument(index) {
@@ -363,12 +541,16 @@
       modeToggle.style.display = 'none';
       searchToggle.style.display = 'none';
       sidebarToggle.style.display = 'none';
+      outlineToggle.style.display = 'none';
       sidebarCollapsed = true;
       sidebar.classList.remove('visible');
+      outline.classList.remove('visible');
       applySidebarState();
+      applyOutlineState();
       fileTitle.textContent = 'MD reader';
       window.mdReader.setWindowTitle('MD reader');
       previewContent.innerHTML = '';
+      refreshOutline();
       appContainer.classList.remove('edit-mode');
       syncSidebar();
       return;
@@ -431,6 +613,7 @@
     }
 
     reapplySearch();
+    refreshOutline();
   }
 
   // ---- File Operations ----
@@ -620,6 +803,7 @@
           state.documents[state.activeIndex].path
         );
         reapplySearch();
+        refreshOutline();
       }
     }
   }
@@ -630,6 +814,7 @@
       saveEditorContentToDocument();
     }
     setMode(state.mode === 'read' ? 'edit' : 'read');
+    collapseSidebar();
   }
 
   // ---- Editor Init ----
@@ -691,8 +876,9 @@
 
     function syncLeftToRight() {
       if (syncing || state.mode !== 'edit') return;
+      // Editor lines are 1-based; preview data-source-line is a 0-based index.
       const topLine = window.MDReaderEditor.lineAtScrollTop(scroller.scrollTop);
-      const el = findPreviewElForLine(topLine);
+      const el = findPreviewElForLine(topLine - 1);
       if (el) {
         markSyncing();
         scrollPreviewToElement(el);
@@ -719,7 +905,7 @@
       const lineNo = parseInt(el.getAttribute('data-source-line'), 10);
       if (!Number.isFinite(lineNo)) return;
       markSyncing();
-      window.MDReaderEditor.scrollToLine(lineNo);
+      window.MDReaderEditor.scrollToLine(lineNo + 1);
     }
 
     scroller.addEventListener('scroll', () => {
@@ -763,6 +949,7 @@
             doc.path
           );
           reapplySearch();
+          refreshOutline();
         }
 
         patchSidebarDocument(doc);
@@ -1006,6 +1193,15 @@
     openFileBtn.addEventListener('click', openFile);
     searchToggle.addEventListener('click', toggleSearch);
     sidebarToggle.addEventListener('click', toggleSidebar);
+    outlineToggle.addEventListener('click', toggleOutline);
+    outlineList.addEventListener('click', (e) => {
+      const source = e.target && e.target.closest ? e.target : e.target && e.target.parentElement;
+      const button = source && source.closest('.outline-item');
+      if (!button) return;
+      const index = outlineEntries.findIndex((entry) => entry.button === button);
+      if (index >= 0) activateOutlineEntry(index);
+    });
+    previewPane.addEventListener('scroll', onPreviewScrollForOutline);
     mainContent.addEventListener('mousedown', () => {
       if (sidebarCollapsed || state.documents.length === 0) return;
       collapseSidebar();
@@ -1053,6 +1249,9 @@
         case 'toggle-sidebar':
           toggleSidebar();
           break;
+        case 'toggle-outline':
+          toggleOutline();
+          break;
         case 'toggle-theme':
           window.MDReaderTheme.toggle();
           break;
@@ -1078,6 +1277,7 @@
   function init() {
     window.MDReaderTheme.init();
     applySidebarState();
+    applyOutlineState();
     setupListeners();
     setupDragDrop();
     setupDividerDrag();

@@ -37,15 +37,23 @@ body {
 }
 
 .toolbar-btn.sidebar-toggle,
-.toolbar-btn.sidebar-toggle[aria-pressed="true"] {
+.toolbar-btn.sidebar-toggle[aria-pressed="true"],
+.toolbar-btn.outline-toggle,
+.toolbar-btn.outline-toggle[aria-pressed="true"] {
   padding: 5px 8px;
   background: transparent;
   -webkit-app-region: no-drag;
 }
 
 .toolbar-btn.sidebar-toggle:hover,
-.toolbar-btn.sidebar-toggle[aria-pressed="true"]:hover {
+.toolbar-btn.sidebar-toggle[aria-pressed="true"]:hover,
+.toolbar-btn.outline-toggle:hover,
+.toolbar-btn.outline-toggle[aria-pressed="true"]:hover {
   background: var(--btn-hover);
+}
+
+.toolbar-btn.outline-toggle[aria-pressed="true"] {
+  color: var(--accent);
 }
 
 .toolbar-center {
@@ -529,4 +537,100 @@ body.resizing,
 body.resizing * {
   cursor: col-resize !important;
   user-select: none !important;
+}
+
+/* ---- Outline ---- */
+.outline {
+  width: 220px;
+  min-width: 180px;
+  max-width: 320px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  display: none;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 0.18s ease, min-width 0.18s ease;
+}
+
+.outline.visible {
+  display: flex;
+}
+
+.outline.collapsed {
+  width: 0;
+  min-width: 0;
+  border-left-color: transparent;
+  pointer-events: none;
+}
+
+.outline-header {
+  flex-shrink: 0;
+  padding: 14px 14px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.outline-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 16px;
+}
+
+.outline-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.outline-list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+.outline-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.outline-item {
+  display: block;
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-item:hover {
+  background: var(--btn-bg);
+  color: var(--text-primary);
+}
+
+.outline-item.active {
+  background: var(--bg-preview);
+  border-left-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.outline-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.outline-empty {
+  padding: 8px 14px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
 }

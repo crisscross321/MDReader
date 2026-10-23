@@ -18,11 +18,15 @@ function check(name, cond, detail) {
 }
 
 function matches(el, sel) {
+  if (sel.includes(',')) {
+    return sel.split(',').some((part) => matches(el, part.trim()));
+  }
   const compound = sel.match(/^\.([A-Za-z0-9_-]+)\[data-doc-id="([^"]+)"\]$/);
   if (compound) {
     return el.classList.contains(compound[1]) && el.dataset.docId === compound[2];
   }
   if (sel.startsWith('.')) return el.classList.contains(sel.slice(1));
+  if (/^h[1-6]$/i.test(sel)) return el.tagName.toLowerCase() === sel.toLowerCase();
   return false;
 }
 
@@ -49,10 +53,16 @@ function createElement(tag) {
     type: '',
     textContent: '',
     scrollTop: 0,
+    offsetTop: 0,
+    offsetParent: null,
     parentNode: null,
     children: [],
     _html: '',
   };
+
+  Object.defineProperty(el, 'firstChild', {
+    get() { return el.children[0] || null; },
+  });
 
   el.classList = {
     add(name) { classes.add(name); },
@@ -171,7 +181,18 @@ window.mdReader = {
   cancelClose() {},
 };
 window.MDReaderTheme = { init() {}, toggle() {} };
-window.MDReaderPreview = { updatePreview() {} };
+window.MDReaderPreview = {
+  updatePreview(markdown, container) {
+    while (container.children.length) container.removeChild(container.children[0]);
+    String(markdown || '').split('\n').forEach((line) => {
+      const match = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (!match) return;
+      const heading = document.createElement('h' + match[1].length);
+      heading.textContent = match[2];
+      container.appendChild(heading);
+    });
+  },
+};
 window.MDReaderEditor = {
   init(_container, cb) { editorOnChange = cb; },
   setContent(content) { editorContent = content; },
@@ -228,6 +249,15 @@ async function main() {
   });
   check('opening documents leaves the sidebar collapsed', sidebarEl.classList.contains('visible') && sidebarEl.classList.contains('collapsed'));
   check('collapsed sidebar hides itself from assistive tech', sidebarEl.getAttribute('aria-hidden') === 'true');
+  const outlineEl = document.getElementById('outline');
+  check(
+    'outline opens beside the document',
+    outlineEl.classList.contains('visible') && !outlineEl.classList.contains('collapsed')
+  );
+  check(
+    'documents without headings show an empty outline',
+    document.getElementById('outlineList').children.some((el) => el.classList.contains('outline-empty'))
+  );
 
   let rows = items();
   check('opens one row per document', rows.length === 2, `count=${rows.length}`);
@@ -326,11 +356,28 @@ async function main() {
   hooks.menu({ action: 'toggle-sidebar' });
   click(items()[0]);
   await flush();
-  check('choosing a document auto-collapses the sidebar', sidebarEl.classList.contains('collapsed'));
+  check('choosing a document leaves the sidebar open', !sidebarEl.classList.contains('collapsed'));
+
+  const outlineList = document.getElementById('outlineList');
+  const outlineItems = () => outlineList.children.filter((el) => el.classList.contains('outline-item'));
+  check(
+    'outline lists the active document headings',
+    outlineItems().length === 1 && outlineItems()[0].textContent === 'Title'
+  );
+
+  const heading = document.getElementById('previewContent').children.find((el) => el.tagName === 'H1');
+  heading.offsetTop = 416;
+  const outlineListeners = (outlineList._listeners && outlineList._listeners.click) || [];
+  outlineListeners.forEach((fn) => fn({ target: outlineItems()[0], preventDefault() {} }));
+  check('jumping from the outline scrolls the article', document.getElementById('previewPane').scrollTop === 400);
+  check('using the outline collapses the sidebar', sidebarEl.classList.contains('collapsed'));
 
   hooks.menu({ action: 'toggle-sidebar' });
   click(items().find((row) => row.classList.contains('active')));
-  check('clicking the current document also auto-collapses', sidebarEl.classList.contains('collapsed'));
+  check('clicking the current document leaves the sidebar open', !sidebarEl.classList.contains('collapsed'));
+
+  hooks.menu({ action: 'toggle-mode' });
+  check('entering edit mode auto-collapses the sidebar', sidebarEl.classList.contains('collapsed'));
 
   hooks.menu({ action: 'toggle-sidebar' });
   const contentListeners = (mainContentEl._listeners && mainContentEl._listeners.mousedown) || [];
@@ -341,6 +388,25 @@ async function main() {
   click(findDesc(items()[0], 'doc-item-close'));
   await flush();
   check('closing a document leaves the sidebar open', !sidebarEl.classList.contains('collapsed'));
+
+  hooks.fileOpened({
+    path: '/docs/outline.md',
+    content: '# A\n\n## B\n\n### C\n',
+  });
+  const levels = outlineItems();
+  check(
+    'outline indents nested headings',
+    levels.map((el) => el.textContent).join(',') === 'A,B,C' &&
+      levels[0].style.paddingLeft === '12px' &&
+      levels[1].style.paddingLeft === '24px' &&
+      levels[2].style.paddingLeft === '36px',
+    levels.map((el) => `${el.textContent}:${el.style.paddingLeft}`).join(' ')
+  );
+
+  hooks.menu({ action: 'toggle-outline' });
+  check('outline toggle hides the panel', outlineEl.classList.contains('collapsed'));
+  hooks.menu({ action: 'toggle-outline' });
+  check('outline toggle shows the panel again', !outlineEl.classList.contains('collapsed'));
 }
 
 main().then(() => {

@@ -25,6 +25,14 @@
       <span class="file-title" id="fileTitle">MD reader</span>
     </div>
     <div class="toolbar-right">
+      <button id="outlineToggle" class="toolbar-btn outline-toggle" title="Show Outline" style="display: none;" aria-pressed="false" aria-label="Show Outline">
+        <span class="btn-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M6 3.5H13.5M6 8H13.5M6 12.5H13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M3 3.5H3.01M3 8H3.01M3 12.5H3.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
+        </span>
+      </button>
       <button id="searchToggle" class="toolbar-btn search-toggle" title="Find in document (Cmd+F)" style="display: none;">
         <span class="btn-icon">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -92,6 +100,11 @@
         <div id="previewContent" class="preview-content"></div>
       </div>
     </div>
+
+    <aside id="outline" class="outline" aria-label="Outline">
+      <div class="outline-header">Outline</div>
+      <nav id="outlineList" class="outline-list"></nav>
+    </aside>
   </div>
 
   <!-- Find bar (read mode) -->
