@@ -154,6 +154,7 @@ const documentMock = {
 };
 
 const hooks = {};
+const recentAdded = [];
 let editorOnChange = null;
 let editorContent = '';
 
@@ -170,6 +171,9 @@ window.mdReader = {
   onFileChanged(cb) { hooks.fileChanged = cb; },
   onMenuAction(cb) { hooks.menu = cb; },
   onBeforeClose(cb) { hooks.beforeClose = cb; },
+  onSettingsChanged(cb) { hooks.settings = cb; },
+  getSettings: async () => ({ theme: 'system', breaks: true, typographer: true, recent: [] }),
+  addRecent(filePath) { recentAdded.push(filePath); },
   unwatchFile() {},
   openFile: async () => null,
   readFile: async () => null,
@@ -180,9 +184,13 @@ window.mdReader = {
   confirmClose() {},
   cancelClose() {},
 };
-window.MDReaderTheme = { init() {}, toggle() {} };
+window.MDReaderTheme = { toggle() {} };
+window.MDReaderI18n = { lang: 'en', t: (key) => key, apply() {} };
+let previewRenders = 0;
 window.MDReaderPreview = {
+  configure() {},
   updatePreview(markdown, container) {
+    previewRenders += 1;
     while (container.children.length) container.removeChild(container.children[0]);
     String(markdown || '').split('\n').forEach((line) => {
       const match = /^(#{1,6})\s+(.*)$/.exec(line);
@@ -407,6 +415,31 @@ async function main() {
   check('outline toggle hides the panel', outlineEl.classList.contains('collapsed'));
   hooks.menu({ action: 'toggle-outline' });
   check('outline toggle shows the panel again', !outlineEl.classList.contains('collapsed'));
+
+  check('opened files are reported to the recent list', recentAdded.includes('/docs/outline.md') && recentAdded.includes('/tmp/Note.md'));
+
+  // Each document keeps its own reading position.
+  const pane = document.getElementById('previewPane');
+  hooks.fileOpened({ path: '/docs/long-a.md', content: '# A\n' });
+  pane.scrollTop = 900;
+  hooks.fileOpened({ path: '/docs/long-b.md', content: '# B\n' });
+  check('a newly opened document starts at the top', pane.scrollTop === 0, `scrollTop=${pane.scrollTop}`);
+  pane.scrollTop = 120;
+  hooks.fileOpened({ path: '/docs/long-a.md', content: '# A\n' });
+  check('switching back restores the earlier position', pane.scrollTop === 900, `scrollTop=${pane.scrollTop}`);
+  hooks.fileOpened({ path: '/docs/long-b.md', content: '# B\n' });
+  check('and the other document keeps its own', pane.scrollTop === 120, `scrollTop=${pane.scrollTop}`);
+
+  // Switching documents renders the preview exactly once.
+  const before = previewRenders;
+  hooks.fileOpened({ path: '/docs/long-a.md', content: '# A\n' });
+  check('switching documents renders once', previewRenders - before === 1, `renders=${previewRenders - before}`);
+  const beforeToggle = previewRenders;
+  hooks.menu({ action: 'toggle-mode' });
+  hooks.menu({ action: 'toggle-mode' });
+  check('toggling modes without edits does not re-render', previewRenders === beforeToggle, `renders=${previewRenders - beforeToggle}`);
+
+  check('the collapsed list shows how many documents are open', document.getElementById('docCount').textContent === String(items().length));
 }
 
 main().then(() => {

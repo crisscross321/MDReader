@@ -37,19 +37,34 @@ body {
 }
 
 .toolbar-btn.sidebar-toggle,
-.toolbar-btn.sidebar-toggle[aria-pressed="true"],
-.toolbar-btn.outline-toggle,
-.toolbar-btn.outline-toggle[aria-pressed="true"] {
+.toolbar-btn.outline-toggle {
   padding: 5px 8px;
   background: transparent;
   -webkit-app-region: no-drag;
 }
 
 .toolbar-btn.sidebar-toggle:hover,
-.toolbar-btn.sidebar-toggle[aria-pressed="true"]:hover,
-.toolbar-btn.outline-toggle:hover,
-.toolbar-btn.outline-toggle[aria-pressed="true"]:hover {
+.toolbar-btn.outline-toggle:hover {
   background: var(--btn-hover);
+}
+
+/* Open-document count, shown while the list is collapsed */
+.doc-count {
+  display: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+.sidebar-toggle[aria-pressed="true"] .doc-count:not(:empty) {
+  display: inline-block;
 }
 
 .toolbar-btn.outline-toggle[aria-pressed="true"] {
@@ -107,6 +122,26 @@ body {
 
 .theme-btn {
   padding: 5px 8px;
+}
+
+/* Icon swaps driven by state, not by rewriting markup */
+.mode-btn .icon-read,
+.mode-btn.editing .icon-edit,
+.theme-btn .icon-moon {
+  display: none;
+}
+
+.mode-btn.editing .icon-read {
+  display: inline;
+}
+
+@media (prefers-color-scheme: dark) {
+  .theme-btn .icon-sun {
+    display: none;
+  }
+  .theme-btn .icon-moon {
+    display: inline;
+  }
 }
 
 /* ---- App Container ---- */
@@ -177,6 +212,59 @@ body {
   margin-top: 12px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.welcome-recent {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  width: 320px;
+}
+
+.welcome-recent-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.welcome-recent-item {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.welcome-recent-item:hover {
+  background: var(--btn-bg);
+}
+
+.welcome-recent-name,
+.welcome-recent-dir {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.welcome-recent-name {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.welcome-recent-dir {
+  font-size: 11px;
+  color: var(--text-muted);
+  direction: rtl; /* keep the tail of long paths visible */
+  text-align: left;
 }
 
 /* ---- Sidebar (Document Tabs) ---- */
@@ -361,9 +449,11 @@ body {
   background: rgba(0, 0, 0, 0.03);
 }
 
-[data-theme="dark"] .editor-container .cm-activeLineGutter,
-[data-theme="dark"] .editor-container .cm-activeLine {
-  background: rgba(255, 255, 255, 0.04);
+@media (prefers-color-scheme: dark) {
+  .editor-container .cm-activeLineGutter,
+  .editor-container .cm-activeLine {
+    background: rgba(255, 255, 255, 0.04);
+  }
 }
 
 /* ---- Divider ---- */
@@ -386,6 +476,7 @@ body {
 /* ---- Preview Pane ---- */
 .preview-pane {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   background: var(--bg-preview);
   /* positioned → becomes offsetParent so anchor scroll sync can compute
@@ -633,4 +724,16 @@ body.resizing * {
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-muted);
+}
+
+/* ---- Narrow windows ----
+   Sidebar + editor + outline can exceed a small window in edit mode; give
+   the split view the room and keep the outline for wider windows. */
+@media (max-width: 960px) {
+  .app-container.edit-mode .outline {
+    display: none;
+  }
+  .app-container.edit-mode .editor-pane {
+    min-width: 240px;
+  }
 }

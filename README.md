@@ -8,14 +8,16 @@ A clean macOS markdown reader & editor built with Electron.
 
 ## Features
 
-- **Reading Mode (Default)** — Opens `.md` files in full-width rendered preview. No distracting source code.
-- **Edit Mode** — Click "Edit" to enter split-view: markdown source on left, live preview on right.
-- **Multi-Document Tabs** — Left sidebar shows all opened documents. Switch between them instantly.
-- **Light/Dark Theme** — Eye-friendly light theme by default (soft grays, not pure white/black). Toggle with `Cmd+Shift+T`.
-- **Keyboard Shortcuts** — `Cmd+E` toggle mode, `Cmd+O` open file, `Cmd+S` save.
-- **Drag & Drop** — Drop `.md` files directly onto the window.
-- **Syntax Highlighting** — Code blocks highlighted via highlight.js.
-- **GFM Support** — Tables, strikethrough, task lists, and more.
+- **Reading Mode (Default)** — Opens `.md` files in full-width rendered preview, with an outline panel. Each document remembers its scroll position.
+- **Edit Mode** — Split view: source on the left, live preview on the right, scroll-synced by source line. Entering edit mode starts at the paragraph you were reading. The editor loads on first use.
+- **Multi-Document** — Collapsible document list with a count badge; Open Recent in the File menu and on the welcome screen.
+- **Markdown** — GFM tables, strikethrough, task lists, footnotes, GitHub alerts (`> [!NOTE]`), YAML front matter shown as a collapsible card, heading anchors (`#section`, `other.md#section`), code highlighting for 29 languages with a copy button.
+- **Local files** — Relative images and links resolve against the document folder, including CJK names and spaces. External edits (including atomic saves from VS Code / vim) reload automatically.
+- **Theme** — Follows the system appearance by default; View › Theme picks System / Light / Dark. `Cmd+Shift+T` toggles light/dark.
+- **Rendering switches** — View › Rendering: single line break as new line, smart quotes and symbols.
+- **Interface language** — Chinese or English, following the system language.
+- **Keyboard Shortcuts** — `Cmd+E` toggle mode, `Cmd+O` open, `Cmd+S` save, `Cmd+F` find, `Cmd+B` document list, `Cmd+Shift+O` outline.
+- **Drag & Drop** — Drop `.md` files onto the window.
 
 ## Install
 
@@ -30,6 +32,7 @@ git clone <repository-url>
 cd <repository-directory>
 npm install
 npm start          # Run in development
+npm test           # Node-level regression checks
 npm run pack       # Package to .app
 npm run build      # Package to .app + .dmg
 ```

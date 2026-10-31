@@ -43,7 +43,6 @@
 
   let editorView = null;
   let onChangeCallback = null;
-  let editorReady = false;
   let extensionsRef = null;
 
   /**
@@ -61,8 +60,8 @@
         }
       });
 
-      // Light theme
-      const lightTheme = EditorView.theme(
+      // Colors come from CSS variables, so one theme serves light and dark
+      const baseTheme = EditorView.theme(
         {
           '&': {
             backgroundColor: 'var(--bg-editor)',
@@ -84,9 +83,6 @@
             backgroundColor: 'transparent',
             color: 'var(--text-secondary)',
           },
-          '.cm-activeLine': {
-            backgroundColor: 'rgba(0,0,0,0.02)',
-          },
           '.cm-selectionBackground': {
             backgroundColor: 'rgba(74, 144, 217, 0.15) !important',
           },
@@ -97,7 +93,6 @@
             padding: '0 4px',
           },
         },
-        { dark: false }
       );
 
       // Keep the extension list so we can rebuild EditorState on doc switch
@@ -116,7 +111,7 @@
         highlightSelectionMatches(),
         markdownEditorLanguage(),
         markdownHighlighting(),
-        lightTheme,
+        baseTheme,
         keymap.of([
           ...closeBracketsKeymap,
           ...defaultKeymap,
@@ -133,12 +128,8 @@
         state: EditorState.create({ doc: '', extensions: extensionsRef }),
         parent: container,
       });
-
-      editorReady = true;
-      console.log('[Editor] initialized successfully');
     } catch (err) {
       console.error('[Editor] Failed to initialize:', err);
-      editorReady = false;
     }
   }
 
@@ -215,20 +206,12 @@
     }
   }
 
-  /**
-   * Check if editor is ready
-   */
-  function isReady() {
-    return editorReady;
-  }
-
   // Export to window
   window.MDReaderEditor = {
     init,
     setContent,
     getContent,
     focus,
-    isReady,
     lineAtScrollTop,
     scrollToLine,
   };

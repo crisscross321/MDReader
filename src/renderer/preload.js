@@ -1,47 +1,60 @@
-const { contextBridge, ipcRenderer } = require('electron');
-const path = require('path');
-const { pathToFileURL } = require('url');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 /**
- * MD reader — Preload (contextBridge)
- * Renderer 处于 contextIsolation + sandbox 环境，只能通过这里暴露的白名单 API
- * 访问主进程能力。禁止暴露任意 require / Node 全局。
+ * MD reader — Preload (contextBridge, sandboxed)
+ * Renderer runs with contextIsolation + sandbox; this whitelist is its only
+ * route to main-process capabilities. Path helpers use the WHATWG URL API so
+ * the preload needs no Node modules.
  */
 
-function resolveFileUrl(docPath, relative) {
-  if (!docPath || !relative) return null;
-  // 去掉 query / hash 后取纯路径
-  const clean = relative.split('?')[0].split('#')[0];
-  if (!clean) return null;
+function toFileUrl(filePath) {
+  let p = String(filePath).replace(/\\/g, '/');
+  if (/^[A-Za-z]:\//.test(p)) p = '/' + p; // Windows drive path
+  const encoded = p
+    .split('/')
+    .map((seg) => (/^[A-Za-z]:$/.test(seg) ? seg : encodeURIComponent(seg)))
+    .join('/');
+  return 'file://' + encoded;
+}
+
+function fromFileUrl(url) {
+  let p = decodeURIComponent(url.pathname);
+  if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1).replace(/\//g, '\\');
+  return p;
+}
+
+/**
+ * Resolve a link/image target (as written in, or percent-encoded by, the
+ * Markdown) against the document's directory.
+ * @returns {{url: string, path: string, hash: string} | null}
+ */
+function resolveFileUrl(docPath, target) {
+  if (!docPath || !target) return null;
   try {
-    const absolute = path.resolve(path.dirname(docPath), clean);
-    const url = pathToFileURL(absolute).href;
-    // 保留锚点（如 ./a.md#section）
-    const hashIndex = relative.indexOf('#');
-    return {
-      url: hashIndex >= 0 ? url + relative.slice(hashIndex) : url,
-      path: absolute,
-    };
+    const url = new URL(target, toFileUrl(docPath));
+    if (url.protocol !== 'file:') return null;
+    return { url: url.href, path: fromFileUrl(url), hash: url.hash.slice(1) };
   } catch (_) {
     return null;
   }
 }
 
 function basename(filePath) {
-  try {
-    return path.basename(filePath || '');
-  } catch (_) {
-    return filePath || '';
-  }
+  return String(filePath || '').split(/[\\/]/).pop();
+}
+
+function on(channel, callback) {
+  ipcRenderer.on(channel, (_event, data) => callback(data));
 }
 
 contextBridge.exposeInMainWorld('mdReader', {
+  platform: process.platform,
+
   // ---- File ops ----
   openFile: () => ipcRenderer.invoke('file:open'),
   saveFile: (filePath, content) => ipcRenderer.invoke('file:save', filePath, content),
   saveFileAs: (content) => ipcRenderer.invoke('file:save-as', content),
   readFile: (filePath) => ipcRenderer.invoke('file:read', filePath),
-  openLocalFile: (filePath) => ipcRenderer.send('file:open-path', filePath),
 
   // ---- Dialogs ----
   confirmDiscard: (fileName) => ipcRenderer.invoke('dialog:confirm-discard', fileName),
@@ -54,27 +67,29 @@ contextBridge.exposeInMainWorld('mdReader', {
 
   // ---- Window / shell ----
   setWindowTitle: (title) => ipcRenderer.send('app:set-title', title),
-  openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
+  openExternal: (url) => ipcRenderer.send('shell:open-external', url),
+  openLocalPath: (filePath) => ipcRenderer.send('shell:open-local', filePath),
+  copyText: (text) => ipcRenderer.send('clipboard:write', text),
+
+  // ---- Settings / recent files ----
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSetting: (key, value) => ipcRenderer.send('settings:set', key, value),
+  addRecent: (filePath) => ipcRenderer.send('recent:add', filePath),
 
   // ---- Path helpers ----
   basename,
   resolveFileUrl,
+  // File.path was removed in Electron 32; dropped files need webUtils.
+  pathForFile: (file) => webUtils.getPathForFile(file),
 
   // ---- Watcher ----
   watchFile: (filePath) => ipcRenderer.send('file:watch-add', filePath),
   unwatchFile: (filePath) => ipcRenderer.send('file:watch-remove', filePath),
 
-  // ---- Events (返回 undefined；回调由 renderer 侧自行持有) ----
-  onBeforeClose: (callback) => {
-    ipcRenderer.on('app:before-close', () => callback());
-  },
-  onFileOpened: (callback) => {
-    ipcRenderer.on('file:opened', (_event, data) => callback(data));
-  },
-  onFileChanged: (callback) => {
-    ipcRenderer.on('file:changed', (_event, data) => callback(data));
-  },
-  onMenuAction: (callback) => {
-    ipcRenderer.on('menu:action', (_event, data) => callback(data));
-  },
+  // ---- Events ----
+  onBeforeClose: (callback) => on('app:before-close', callback),
+  onFileOpened: (callback) => on('file:opened', callback),
+  onFileChanged: (callback) => on('file:changed', callback),
+  onMenuAction: (callback) => on('menu:action', callback),
+  onSettingsChanged: (callback) => on('settings:changed', callback),
 });

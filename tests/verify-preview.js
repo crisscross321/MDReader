@@ -1,10 +1,13 @@
 /* ==========================================
    MD reader — Preview/Editor regression checks (node-level)
    Run: node tests/verify-preview.js
-   Mirrors the core logic in src/renderer/scripts/preview.js & editor.js
+   Exercises src/renderer/scripts/markdown.js, preload.js path helpers and
+   the editor highlight setup directly (no mirrored copies).
    ========================================== */
 
-const markdownIt = require('markdown-it');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
 const { EditorState } = require('@codemirror/state');
 const { history, undo, undoDepth } = require('@codemirror/commands');
 const { markdownLanguage } = require('@codemirror/lang-markdown');
@@ -14,6 +17,11 @@ const {
   markdownHighlighting,
   markdownHighlightStyle,
 } = require('../src/renderer/scripts/editorHighlight');
+const {
+  createMarkdown,
+  renderMarkdown,
+  normalizeMarkdown,
+} = require('../src/renderer/scripts/markdown');
 
 let failures = 0;
 
@@ -26,117 +34,25 @@ function check(name, cond, detail) {
   }
 }
 
-// ---------- mirror of preview.js markdown-it setup ----------
-const md = markdownIt({
-  html: true,
-  linkify: true,
-  typographer: true,
-  breaks: true,
-});
-md.enable(['table', 'strikethrough']);
+// The app's own renderer — no mirrored copy to drift out of sync.
+const md = createMarkdown();
 
-md.core.ruler.after('inline', 'task-list', function (state) {
-  const tokens = state.tokens;
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token.type !== 'inline') continue;
-    const prev = tokens[i - 1];
-    const prevPrev = tokens[i - 2];
-    if (!prev || prev.type !== 'paragraph_open') continue;
-    if (!prevPrev || prevPrev.type !== 'list_item_open') continue;
-    const content = token.content;
-    const m = /^\[([ xX])\]\s+/.exec(content);
-    if (!m) continue;
-    const checked = m[1] !== ' ';
-    const rest = content.slice(m[0].length);
-    token.content = rest;
-    const cbToken = new state.Token('html_inline', '', 0);
-    cbToken.content = checked
-      ? '<input type="checkbox" checked disabled> '
-      : '<input type="checkbox" disabled> ';
-    token.children.unshift(cbToken);
-    const textToken = token.children.find((c) => c.type === 'text');
-    if (textToken) textToken.content = rest;
-  }
-});
-
-// ---------- mirror of normalizeMarkdown ----------
-function isCommentOnlyLine(line) {
-  return /^\s*<!--[\s\S]*?-->\s*$/.test(line);
+// Load the sandboxed preload with a stub electron to test its path helpers.
+function loadPreloadApi() {
+  let api = null;
+  const electron = {
+    contextBridge: { exposeInMainWorld: (_name, value) => { api = value; } },
+    ipcRenderer: { on() {}, send() {}, invoke() {} },
+    webUtils: { getPathForFile: () => '' },
+  };
+  const code = fs.readFileSync(path.join(__dirname, '../src/renderer/preload.js'), 'utf-8');
+  vm.runInNewContext(code, {
+    require: (name) => (name === 'electron' ? electron : null),
+    process: { platform: 'darwin' },
+    URL,
+  });
+  return api;
 }
-function isTableRow(line) {
-  const trimmed = line.trim();
-  if (!trimmed.includes('|')) return false;
-  if (isCommentOnlyLine(trimmed)) return false;
-  return trimmed.startsWith('|') || trimmed.endsWith('|');
-}
-function isTableSeparator(line) {
-  const trimmed = line.trim();
-  return /^[\s|:-]+$/.test(trimmed) && trimmed.includes('|') && trimmed.includes('-');
-}
-function isSkippableTableGap(line) {
-  return !line.trim() || isCommentOnlyLine(line);
-}
-function nextMeaningfulLine(lines, startIndex) {
-  let index = startIndex;
-  while (index < lines.length && isSkippableTableGap(lines[index])) index += 1;
-  return { index, line: index < lines.length ? lines[index] : null, skipped: index > startIndex };
-}
-function normalizeMarkdown(markdownString) {
-  const lines = (markdownString || '').replace(/\r\n?/g, '\n').split('\n');
-  const normalized = [];
-  const map = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const nextLine = lines[i + 1];
-    if (isTableRow(line) && isTableSeparator(nextLine || '')) {
-      normalized.push(line);
-      map.push(i);
-      normalized.push(nextLine);
-      map.push(i + 1);
-      i += 1;
-      while (i + 1 < lines.length) {
-        const { index: lookahead, line: candidate, skipped } = nextMeaningfulLine(lines, i + 1);
-        if (candidate === null) { i = lines.length; break; }
-        if (!isTableRow(candidate)) {
-          if (skipped) { normalized.push(''); map.push(i + 1); }
-          i = lookahead - 1;
-          break;
-        }
-        const nextAfterCandidate = nextMeaningfulLine(lines, lookahead + 1);
-        if (skipped && isTableSeparator(nextAfterCandidate.line || '')) {
-          normalized.push('');
-          map.push(lookahead);
-          i = lookahead - 1;
-          break;
-        }
-        normalized.push(candidate);
-        map.push(lookahead);
-        i = lookahead;
-      }
-      continue;
-    }
-    normalized.push(line);
-    map.push(i);
-  }
-  return { text: normalized.join('\n'), map };
-}
-
-// mirror of the source-line anchor rule
-md.core.ruler.push('source-line', function (state) {
-  const map = state.env.offsetMap;
-  if (!map) return;
-  const tokens = state.tokens;
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (!token.map) continue;
-    const isBlockOpen = token.type.endsWith('_open');
-    const isSelfClose = token.type === 'hr' || token.type === 'fence' || token.type === 'code_block';
-    if (!isBlockOpen && !isSelfClose) continue;
-    const origLine = map[token.map[0]];
-    if (origLine !== undefined) token.attrSet('data-source-line', String(origLine));
-  }
-});
 
 console.log('\n== Task list (GFM) ==');
 {
@@ -228,7 +144,69 @@ console.log('\n== Anchor line mapping (scroll sync) ==');
 console.log('\n== Setext heading preserved ==');
 {
   const html = md.render('Heading\n=======\n\nBody text');
-  check('setext heading renders as h1', /<h1>/.test(html) && /Heading/.test(html));
+  check('setext heading renders as h1', /<h1[ >]/.test(html) && /Heading/.test(html));
+}
+
+console.log('\n== Front matter ==');
+{
+  const src = ['---', 'title: 笔记', 'tags:', '  - a', '---', '', '# Body', 'text'].join('\n');
+  const html = renderMarkdown(md, src, { frontMatterLabel: 'Props' });
+  check('front matter is not rendered as hr + heading', !/<hr/.test(html) && !/<h2/.test(html), html);
+  check('front matter becomes a collapsible card', /<details class="front-matter"[^>]*><summary>Props · 笔记<\/summary>/.test(html), html);
+  check('front matter keeps nested values', /<th>tags<\/th><td>- a/.test(html), html);
+  check('body anchors keep original line numbers', /<h1[^>]*data-source-line="6"/.test(html), html);
+  const noFm = renderMarkdown(md, 'text\n\n---\n\nmore');
+  check('a later --- is still a thematic break', /<hr/.test(noFm) && !/front-matter/.test(noFm));
+}
+
+console.log('\n== Heading ids / footnotes / alerts / code ==');
+{
+  const html = md.render('# Hello World!\n\n## Hello World!\n\n### 中文 标题');
+  check('heading gets a GitHub-style slug', /<h1 id="hello-world">/.test(html), html);
+  check('duplicate headings get a numeric suffix', /<h2 id="hello-world-1">/.test(html), html);
+  check('CJK headings keep their text in the slug', /<h3 id="中文-标题">/.test(html), html);
+
+  const fn = md.render('Claim[^1]\n\n[^1]: Source');
+  check('footnote reference links to the note', /href="#fn1"/.test(fn) && /id="fn1"/.test(fn), fn);
+
+  const alert = renderMarkdown(md, '> [!WARNING]\n> Careful', { alertLabels: { warning: '警告' } });
+  check('alert blockquote gets a type class', /class="markdown-alert markdown-alert-warning"/.test(alert), alert);
+  check('alert shows the localized title', /markdown-alert-title">警告</.test(alert), alert);
+  check('alert marker text is removed', !/\[!WARNING\]/.test(alert), alert);
+  check('plain blockquote stays plain', !/markdown-alert/.test(md.render('> just a quote')));
+
+  const task = md.render('- [ ] todo **bold** tail');
+  check('task text with inline markup is not duplicated', (task.match(/tail/g) || []).length === 1 && /<strong>bold<\/strong>/.test(task), task);
+
+  const code = renderMarkdown(md, 'a\n\n```swift\nlet x = 1\n```\n\n```nolang\n<b>\n```');
+  check('swift is highlighted', /class="language-swift"[\s\S]*hljs-keyword/.test(code), code);
+  check('code blocks carry a source line anchor', /<code data-source-line="2"/.test(code), code);
+  check('unknown languages are escaped', /&lt;b&gt;/.test(code), code);
+}
+
+console.log('\n== Rendering switches ==');
+{
+  const soft = createMarkdown({ breaks: false, typographer: false }).render('a\nb (c)');
+  check('breaks off keeps a soft line break', !/<br>/.test(soft), soft);
+  check('typographer off keeps (c) literal', /\(c\)/.test(soft), soft);
+  check('defaults keep breaks on', /<br>/.test(md.render('a\nb')));
+}
+
+console.log('\n== Local path resolution (preload) ==');
+{
+  const api = loadPreloadApi();
+  const doc = '/Users/me/笔记 本/doc.md';
+  const zh = md.render('![](./图片 素材.png)'.replace(' 素材', '%20素材'));
+  const src = /src="([^"]+)"/.exec(zh)[1];
+  const img = api.resolveFileUrl(doc, src);
+  check('percent-encoded CJK image path resolves to the real file', img && img.path === '/Users/me/笔记 本/图片 素材.png', JSON.stringify(img));
+  check('resolved URL is encoded exactly once', img && !/%25/.test(img.url), img && img.url);
+  const raw = api.resolveFileUrl(doc, '../其他/图.png');
+  check('raw (unencoded) relative paths resolve too', raw && raw.path === '/Users/me/其他/图.png', JSON.stringify(raw));
+  const link = api.resolveFileUrl(doc, 'other.md#%E7%AB%A0%E8%8A%82');
+  check('md link keeps its anchor', link && link.path === '/Users/me/笔记 本/other.md' && decodeURIComponent(link.hash) === '章节', JSON.stringify(link));
+  check('http targets are not treated as local files', api.resolveFileUrl(doc, 'https://x.y/a.png') === null);
+  check('basename handles both separators', api.basename('C:\\a\\b.md') === 'b.md' && api.basename('/a/b.md') === 'b.md');
 }
 
 console.log('\n== Undo-history fix (document switching must reset history) ==');

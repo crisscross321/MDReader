@@ -3,12 +3,13 @@
    ========================================== */
 
 (function () {
+  const { t, lang } = window.MDReaderI18n;
+
   // State
   const state = {
     mode: 'read', // 'read' or 'edit'
-    documents: [], // [{path, content, isDirty, openedAt}]
+    documents: [], // [{id, path, content, isDirty, openedAt, scrollTop}]
     activeIndex: -1,
-    editorDocumentIndex: -1,
     editorInitialized: false,
     docVersion: 0, // bumped on doc switch/close — invalidates pending debounce
     search: { open: false },
@@ -17,9 +18,12 @@
   // DOM elements
   const appContainer = document.getElementById('appContainer');
   const welcomeScreen = document.getElementById('welcomeScreen');
+  const recentSection = document.getElementById('recentSection');
+  const recentList = document.getElementById('recentList');
   const mainContent = document.getElementById('mainContent');
   const sidebar = document.getElementById('sidebar');
   const sidebarToggle = document.getElementById('sidebarToggle');
+  const docCount = document.getElementById('docCount');
   const documentsList = document.getElementById('documentsList');
   const outline = document.getElementById('outline');
   const outlineToggle = document.getElementById('outlineToggle');
@@ -31,7 +35,6 @@
   const editorContainer = document.getElementById('editorContainer');
   const modeToggle = document.getElementById('modeToggle');
   const modeLabel = document.getElementById('modeLabel');
-  const modeIcon = document.getElementById('modeIcon');
   const themeToggle = document.getElementById('themeToggle');
   const fileTitle = document.getElementById('fileTitle');
   const openFileBtn = document.getElementById('openFileBtn');
@@ -44,7 +47,8 @@
   const searchClose = document.getElementById('searchClose');
   const toastContainer = document.getElementById('toastContainer');
 
-  // Debounce helper
+  const MODE_TRANSITION_MS = 320; // matches the .editor-pane width transition
+
   function debounce(fn, delay) {
     let timer;
     return function (...args) {
@@ -65,23 +69,87 @@
     }, 2600);
   }
 
+  function activeDoc() {
+    return state.documents[state.activeIndex] || null;
+  }
+
+  function docName(doc) {
+    return doc.path ? window.mdReader.basename(doc.path) : t('untitled');
+  }
+
   // Flag to suppress editor onChange during programmatic setContent
   let suppressOnChange = false;
   let closeConfirmationInFlight = false;
 
-  function saveEditorContentToDocument(index = state.activeIndex) {
-    if (!state.editorInitialized || state.mode !== 'edit') return;
-    if (index < 0 || index >= state.documents.length) return;
-
+  function saveEditorContentToDocument() {
+    const doc = activeDoc();
+    if (!doc || !state.editorInitialized || state.mode !== 'edit') return;
     const content = window.MDReaderEditor.getContent();
-    if (state.documents[index].content !== content) {
-      state.documents[index].content = content;
-      state.documents[index].isDirty = true;
+    if (doc.content !== content) {
+      doc.content = content;
+      doc.isDirty = true;
     }
   }
 
-  function syncEditorDocumentIndex() {
-    state.editorDocumentIndex = state.mode === 'edit' ? state.activeIndex : -1;
+  // ---- Scroll geometry (shared by outline, anchors and edit-mode sync) ----
+
+  /** Offset of el from the top of the preview scroll container. */
+  function offsetInPreview(el) {
+    let top = 0;
+    let node = el;
+    while (node && node !== previewPane && node !== document.body) {
+      top += node.offsetTop || 0;
+      node = node.offsetParent;
+    }
+    return top;
+  }
+
+  function scrollPreviewTo(el) {
+    previewPane.scrollTop = Math.max(0, offsetInPreview(el) - 16);
+  }
+
+  function viewTop(el) {
+    if (!el || typeof el.getBoundingClientRect !== 'function') return null;
+    return el.getBoundingClientRect().top;
+  }
+
+  /** Last preview block whose source line is <= lineNo (0-based). */
+  function previewElForLine(lineNo) {
+    let best = null;
+    for (const el of previewContent.querySelectorAll('[data-source-line]')) {
+      if (parseInt(el.getAttribute('data-source-line'), 10) <= lineNo) best = el;
+      else break;
+    }
+    return best;
+  }
+
+  /** Source line (0-based) of the block at the top of the preview viewport. */
+  function previewTopLine() {
+    const els = previewContent.querySelectorAll('[data-source-line]');
+    const paneTop = viewTop(previewPane);
+    if (els.length === 0 || paneTop === null) return 0;
+    let best = els[0];
+    for (const el of els) {
+      if (viewTop(el) <= paneTop + 24) best = el;
+      else break;
+    }
+    return parseInt(best.getAttribute('data-source-line'), 10) || 0;
+  }
+
+  // Programmatic scrolls must not bounce back through the scroll-sync handlers.
+  let syncLockUntil = 0;
+  function lockSync(ms) {
+    syncLockUntil = Math.max(syncLockUntil, Date.now() + ms);
+  }
+  function syncLocked() {
+    return Date.now() < syncLockUntil;
+  }
+
+  function alignPreviewToLine(lineNo) {
+    const el = previewElForLine(lineNo);
+    lockSync(80);
+    if (el) scrollPreviewTo(el);
+    else previewPane.scrollTop = 0;
   }
 
   // ---- Sidebar ----
@@ -89,6 +157,7 @@
   // Choosing a file leaves it open, so several documents can be compared
   // without reopening the list. It collapses on the next reading action:
   // clicking into the article, following the outline, or toggling edit mode.
+  // A count badge on the toggle shows when more than one document is open.
 
   let sidebarCollapsed = true;
 
@@ -98,8 +167,12 @@
     if (sidebarCollapsed) sidebar.setAttribute('inert', '');
     else sidebar.removeAttribute('inert');
     sidebarToggle.setAttribute('aria-pressed', sidebarCollapsed ? 'true' : 'false');
-    const label = sidebarCollapsed ? 'Show Sidebar (Cmd+B)' : 'Hide Sidebar (Cmd+B)';
+    const count = state.documents.length;
+    let label = t(sidebarCollapsed ? 'showSidebar' : 'hideSidebar');
+    if (count > 1) label += ' · ' + t('docCount', { n: count });
     sidebarToggle.title = label;
+    sidebarToggle.setAttribute('aria-label', label);
+    docCount.textContent = count > 1 ? String(count) : '';
   }
 
   function setSidebarCollapsed(collapsed) {
@@ -149,9 +222,8 @@
     outline.setAttribute('aria-hidden', outlineCollapsed ? 'true' : 'false');
     if (outlineCollapsed) outline.setAttribute('inert', '');
     else outline.removeAttribute('inert');
-    const open = !outlineCollapsed;
-    outlineToggle.setAttribute('aria-pressed', open ? 'true' : 'false');
-    const label = open ? 'Hide Outline (Cmd+Shift+O)' : 'Show Outline (Cmd+Shift+O)';
+    outlineToggle.setAttribute('aria-pressed', outlineCollapsed ? 'false' : 'true');
+    const label = t(outlineCollapsed ? 'showOutline' : 'hideOutline');
     outlineToggle.title = label;
     outlineToggle.setAttribute('aria-label', label);
   }
@@ -170,21 +242,6 @@
   function headingLevel(el) {
     const level = parseInt(String(el.tagName || '').slice(1), 10);
     return Number.isFinite(level) ? level : 1;
-  }
-
-  function elementOffsetTop(el, container) {
-    let top = 0;
-    let node = el;
-    while (node && node !== container) {
-      top += node.offsetTop || 0;
-      node = node.offsetParent;
-    }
-    return top;
-  }
-
-  function viewTop(el) {
-    if (!el || typeof el.getBoundingClientRect !== 'function') return null;
-    return el.getBoundingClientRect().top;
   }
 
   function setOutlineCurrent(index) {
@@ -246,7 +303,7 @@
     if (headings.length === 0) {
       const empty = document.createElement('div');
       empty.classList.add('outline-empty');
-      empty.textContent = 'No headings';
+      empty.textContent = t('noHeadings');
       outlineList.appendChild(empty);
       return;
     }
@@ -272,7 +329,7 @@
   function activateOutlineEntry(index) {
     const entry = outlineEntries[index];
     if (!entry) return;
-    previewPane.scrollTop = Math.max(0, elementOffsetTop(entry.heading, previewPane) - 16);
+    scrollPreviewTo(entry.heading);
     const lineNo = parseInt(entry.heading.getAttribute('data-source-line') || '', 10);
     if (state.mode === 'edit' && state.editorInitialized && Number.isFinite(lineNo)) {
       window.MDReaderEditor.scrollToLine(lineNo + 1);
@@ -289,6 +346,39 @@
     });
   }
 
+  // ---- Preview rendering ----
+  // Skips work when the active document, its content and the render options
+  // are unchanged, so switching modes or documents renders exactly once.
+
+  let rendered = { doc: null, content: null, path: null, options: 0 };
+  let renderOptionsVersion = 0;
+
+  function renderPreview(force) {
+    const doc = activeDoc();
+    if (!doc) return;
+    const same =
+      rendered.doc === doc &&
+      rendered.content === doc.content &&
+      rendered.path === doc.path &&
+      rendered.options === renderOptionsVersion;
+    if (same && !force) return;
+    window.MDReaderPreview.updatePreview(doc.content, previewContent, doc.path);
+    rendered = { doc, content: doc.content, path: doc.path, options: renderOptionsVersion };
+    reapplySearch();
+    refreshOutline();
+  }
+
+  function scrollToAnchor(id) {
+    if (!id) return;
+    let target = null;
+    try {
+      target = document.getElementById(decodeURIComponent(id));
+    } catch (_) {
+      target = document.getElementById(id);
+    }
+    if (target && previewContent.contains(target)) scrollPreviewTo(target);
+  }
+
   // Document identity is a monotonic id. Array indexes go stale across splice,
   // and several Untitled docs share a null path, so neither can key the DOM.
 
@@ -302,11 +392,12 @@
       content,
       isDirty,
       openedAt: Date.now(),
+      scrollTop: 0,
     };
   }
 
   function formatOpenedAt(openedAt) {
-    return new Date(openedAt).toLocaleTimeString('zh-CN', {
+    return new Date(openedAt).toLocaleTimeString(lang === 'zh' ? 'zh-CN' : 'en-US', {
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -316,18 +407,9 @@
   function viewFor(doc) {
     let view = docViews.get(doc);
     if (!view) {
-      view = {
-        fileName: null,
-        timeLabel: formatOpenedAt(doc.openedAt),
-        snippet: '',
-        snippetHead: null,
-      };
+      view = { timeLabel: formatOpenedAt(doc.openedAt), snippet: '', snippetHead: null };
       docViews.set(doc, view);
     }
-
-    const fileName = doc.path ? window.mdReader.basename(doc.path) : 'Untitled';
-    if (view.fileName !== fileName) view.fileName = fileName;
-
     const head = doc.content.slice(0, 1500);
     if (view.snippetHead !== head) {
       view.snippetHead = head;
@@ -337,19 +419,16 @@
     return view;
   }
 
-  function metaText(view) {
-    return view.snippet ? `${view.timeLabel} \u00A0 ${view.snippet}` : view.timeLabel;
-  }
-
   function paintDocItem(item, doc) {
     const view = viewFor(doc);
-    item.classList.toggle('active', state.documents[state.activeIndex] === doc);
+    item.classList.toggle('active', activeDoc() === doc);
     item.classList.toggle('dirty', !!doc.isDirty);
 
+    const name = docName(doc);
     const nameEl = item.querySelector('.doc-item-name');
-    if (nameEl.textContent !== view.fileName) nameEl.textContent = view.fileName;
+    if (nameEl.textContent !== name) nameEl.textContent = name;
 
-    const meta = metaText(view);
+    const meta = view.snippet ? `${view.timeLabel} \u00A0 ${view.snippet}` : view.timeLabel;
     const metaEl = item.querySelector('.doc-item-meta');
     if (metaEl.textContent !== meta) metaEl.textContent = meta;
   }
@@ -374,7 +453,7 @@
     const close = document.createElement('button');
     close.classList.add('doc-item-close');
     close.type = 'button';
-    close.title = 'Close';
+    close.title = t('close');
     close.textContent = '\u00D7';
 
     info.append(name, meta);
@@ -422,6 +501,7 @@
     if (documentsList.scrollTop !== scrollTop) {
       documentsList.scrollTop = scrollTop;
     }
+    applySidebarState();
   }
 
   // Edit ticks only repaint the row whose content changed.
@@ -450,15 +530,16 @@
 
   // ---- Document Management ----
 
-  function loadFile(data) {
-    if (!data) return;
-    loadFiles([data]);
+  /** Remember where the reader was before leaving the active document. */
+  function saveCurrentDocState() {
+    const doc = activeDoc();
+    if (!doc) return;
+    saveEditorContentToDocument();
+    doc.scrollTop = previewPane.scrollTop;
   }
 
   function loadFiles(dataList) {
     if (!Array.isArray(dataList) || dataList.length === 0) return;
-
-    saveCurrentDocState();
 
     let lastIndex = -1;
     let addedAny = false;
@@ -471,10 +552,8 @@
         continue;
       }
 
-      state.documents.push(createDocumentRecord({
-        path: data.path,
-        content: data.content,
-      }));
+      state.documents.push(createDocumentRecord({ path: data.path, content: data.content }));
+      if (data.path) window.mdReader.addRecent(data.path);
       lastIndex = state.documents.length - 1;
       addedAny = true;
     }
@@ -482,13 +561,7 @@
     if (lastIndex < 0) return;
     if (!addedAny && lastIndex === state.activeIndex) return;
 
-    state.activeIndex = lastIndex;
-    state.docVersion += 1;
-
-    showDocumentUI();
-    setMode('read');
-    displayActiveDocument();
-    syncSidebar();
+    activateDocument(lastIndex);
   }
 
   function showDocumentUI() {
@@ -500,70 +573,76 @@
     outlineToggle.style.display = '';
     sidebar.classList.add('visible');
     outline.classList.add('visible');
-    applySidebarState();
     applyOutlineState();
   }
 
-  function switchDocument(index) {
-    if (index === state.activeIndex) return;
-    if (index < 0 || index >= state.documents.length) return;
+  function showWelcomeUI() {
+    closeSearch();
+    welcomeScreen.style.display = '';
+    previewPane.style.display = 'none';
+    modeToggle.style.display = 'none';
+    searchToggle.style.display = 'none';
+    sidebarToggle.style.display = 'none';
+    outlineToggle.style.display = 'none';
+    sidebarCollapsed = true;
+    sidebar.classList.remove('visible');
+    outline.classList.remove('visible');
+    applyOutlineState();
+    fileTitle.textContent = 'MD reader';
+    fileTitle.title = '';
+    window.mdReader.setWindowTitle('MD reader');
+    previewContent.innerHTML = '';
+    rendered = { doc: null, content: null, path: null, options: 0 };
+    refreshOutline();
+    setMode('read');
+  }
 
+  /** Make documents[index] active: leaves edit mode, renders once, restores its scroll. */
+  function activateDocument(index) {
     saveCurrentDocState();
     state.activeIndex = index;
     state.docVersion += 1;
+    showDocumentUI();
     setMode('read');
     displayActiveDocument();
     syncSidebar();
   }
 
+  function switchDocument(index) {
+    if (index === state.activeIndex) return;
+    if (index < 0 || index >= state.documents.length) return;
+    activateDocument(index);
+  }
+
   async function closeDocument(index) {
     if (index < 0 || index >= state.documents.length) return;
 
+    // Flush editor content so the dirty check sees the latest text
+    saveCurrentDocState();
     const doc = state.documents[index];
-    // Save current editor content into state before checking dirty flag
-    if (index === state.activeIndex) {
-      saveCurrentDocState();
-    }
     const ok = await confirmDiscardIfDirty(doc);
     if (!ok) return;
 
-    if (doc.path) {
-      window.mdReader.unwatchFile(doc.path);
-    }
-    state.documents.splice(index, 1);
+    const closingActive = doc === activeDoc();
+    const nowIndex = state.documents.indexOf(doc);
+    if (nowIndex < 0) return;
+    if (doc.path) window.mdReader.unwatchFile(doc.path);
+    state.documents.splice(nowIndex, 1);
     state.docVersion += 1;
 
     if (state.documents.length === 0) {
       state.activeIndex = -1;
-      closeSearch();
-      welcomeScreen.style.display = '';
-      previewPane.style.display = 'none';
-      modeToggle.style.display = 'none';
-      searchToggle.style.display = 'none';
-      sidebarToggle.style.display = 'none';
-      outlineToggle.style.display = 'none';
-      sidebarCollapsed = true;
-      sidebar.classList.remove('visible');
-      outline.classList.remove('visible');
-      applySidebarState();
-      applyOutlineState();
-      fileTitle.textContent = 'MD reader';
-      window.mdReader.setWindowTitle('MD reader');
-      previewContent.innerHTML = '';
-      refreshOutline();
-      appContainer.classList.remove('edit-mode');
+      showWelcomeUI();
       syncSidebar();
       return;
     }
 
-    if (index === state.activeIndex) {
-      state.activeIndex = Math.min(index, state.documents.length - 1);
-      setMode('read');
-      displayActiveDocument();
-    } else if (index < state.activeIndex) {
-      state.activeIndex--;
+    if (closingActive) {
+      state.activeIndex = -1; // nothing to save for the closed doc
+      activateDocument(Math.min(nowIndex, state.documents.length - 1));
+      return;
     }
-
+    if (nowIndex < state.activeIndex) state.activeIndex--;
     syncSidebar();
   }
 
@@ -582,10 +661,8 @@
     closeConfirmationInFlight = true;
     saveCurrentDocState();
     try {
-      const dirtyDocs = state.documents.filter((d) => d.isDirty);
-      for (const doc of dirtyDocs) {
-        const ok = await confirmDiscardIfDirty(doc);
-        if (!ok) return false;
+      for (const doc of state.documents.filter((d) => d.isDirty)) {
+        if (!(await confirmDiscardIfDirty(doc))) return false;
       }
       return true;
     } finally {
@@ -593,80 +670,57 @@
     }
   }
 
-  function saveCurrentDocState() {
-    if (state.activeIndex < 0 || state.activeIndex >= state.documents.length) return;
-    saveEditorContentToDocument();
-  }
-
   function displayActiveDocument() {
-    if (state.activeIndex < 0) return;
-    const doc = state.documents[state.activeIndex];
+    const doc = activeDoc();
+    if (!doc) return;
 
     updateTitle();
-    window.MDReaderPreview.updatePreview(doc.content, previewContent, doc.path);
+    renderPreview();
+    previewPane.scrollTop = doc.scrollTop || 0;
 
     if (state.editorInitialized) {
       suppressOnChange = true;
       window.MDReaderEditor.setContent(doc.content);
       suppressOnChange = false;
-      syncEditorDocumentIndex();
     }
-
-    reapplySearch();
-    refreshOutline();
   }
 
   // ---- File Operations ----
 
   function newDocument() {
     saveCurrentDocState();
-
-    state.documents.push(createDocumentRecord({
-      path: null,
-      content: '',
-    }));
-    state.activeIndex = state.documents.length - 1;
-    state.docVersion += 1;
-
-    showDocumentUI();
-    setMode('read');
-    displayActiveDocument();
-    syncSidebar();
+    state.documents.push(createDocumentRecord({ path: null, content: '' }));
+    state.activeIndex = -1;
+    activateDocument(state.documents.length - 1);
   }
 
   async function openFile() {
-    const result = await window.mdReader.openFile();
-    if (!result) return;
-    const docs = Array.isArray(result) ? result : [result];
-    loadFiles(docs);
+    const docs = await window.mdReader.openFile();
+    if (docs) loadFiles(docs);
   }
 
-  async function openRecent(filePath) {
-    if (!filePath) return;
+  async function openPath(filePath, hash) {
     const data = await window.mdReader.readFile(filePath);
-    if (data) loadFiles([data]);
+    if (!data) return;
+    loadFiles([data]);
+    if (hash) scrollToAnchor(hash);
   }
 
   async function confirmDiscardIfDirty(doc) {
     if (!doc || !doc.isDirty) return true;
-    const fileName = doc.path
-      ? window.mdReader.basename(doc.path)
-      : 'Untitled';
-    const choice = await window.mdReader.confirmDiscard(fileName);
+    const choice = await window.mdReader.confirmDiscard(docName(doc));
     if (choice === 'cancel') return false;
     if (choice === 'save') {
       if (!doc.path) {
-        // Save-as needs UI; fall back to switching to it
+        // Save-as needs UI; switch to the document first
         const docIndex = state.documents.indexOf(doc);
-        if (docIndex >= 0 && docIndex !== state.activeIndex) {
-          switchDocument(docIndex);
-        }
+        if (docIndex >= 0 && docIndex !== state.activeIndex) switchDocument(docIndex);
         await saveFileAs();
       } else {
         const result = await window.mdReader.saveFile(doc.path, doc.content);
         if (result && result.success) {
           doc.isDirty = false;
-          if (state.documents[state.activeIndex] === doc) updateTitle();
+          if (activeDoc() === doc) updateTitle();
           syncSidebar();
         }
       }
@@ -675,294 +729,240 @@
     return true;
   }
 
+  function currentContent(doc) {
+    return state.mode === 'edit' && state.editorInitialized
+      ? window.MDReaderEditor.getContent()
+      : doc.content;
+  }
+
   async function saveFile() {
-    if (state.activeIndex < 0) return;
-    const doc = state.documents[state.activeIndex];
+    const doc = activeDoc();
+    if (!doc) return;
     if (!doc.path) return saveFileAs();
 
-    const content =
-      state.mode === 'edit' && state.editorInitialized
-        ? window.MDReaderEditor.getContent()
-        : doc.content;
+    const content = currentContent(doc);
     const result = await window.mdReader.saveFile(doc.path, content);
     if (result && result.success) {
       doc.content = content;
       doc.isDirty = false;
       updateTitle();
       syncSidebar();
-      showToast('Saved');
+      showToast(t('saved'));
     }
   }
 
   async function saveFileAs() {
-    if (state.activeIndex < 0) return;
-    const doc = state.documents[state.activeIndex];
-    const content =
-      state.mode === 'edit' && state.editorInitialized
-        ? window.MDReaderEditor.getContent()
-        : doc.content;
+    const doc = activeDoc();
+    if (!doc) return;
+    const content = currentContent(doc);
     const result = await window.mdReader.saveFileAs(content);
     if (result && result.success) {
+      if (doc.path && doc.path !== result.path) window.mdReader.unwatchFile(doc.path);
       doc.path = result.path;
       doc.content = content;
       doc.isDirty = false;
+      window.mdReader.addRecent(result.path);
       updateTitle();
       syncSidebar();
-      showToast('Saved');
+      showToast(t('saved'));
     }
   }
 
   function updateTitle() {
-    if (state.activeIndex < 0) {
+    const doc = activeDoc();
+    if (!doc) {
       window.mdReader.setWindowTitle('MD reader');
       return;
     }
-    const doc = state.documents[state.activeIndex];
-    const fileName = doc.path
-      ? window.mdReader.basename(doc.path)
-      : 'Untitled';
-    const dirty = doc.isDirty ? ' *' : '';
-    fileTitle.textContent = fileName + dirty;
-    window.mdReader.setWindowTitle(fileName + dirty + ' - MD reader');
+    const title = docName(doc) + (doc.isDirty ? ' *' : '');
+    fileTitle.textContent = title;
+    fileTitle.title = doc.path || '';
+    window.mdReader.setWindowTitle(title + ' - MD reader');
   }
 
   // ---- External file changes ----
 
-  function handleFileChanged(changedPath) {
-    const docIndex = state.documents.findIndex((d) => d.path === changedPath);
-    if (docIndex < 0) return;
-    const doc = state.documents[docIndex];
+  async function handleFileChanged({ path: changedPath }) {
+    const doc = state.documents.find((d) => d.path === changedPath);
+    if (!doc || doc.reloadPrompt) return;
     const fileName = window.mdReader.basename(changedPath);
 
-    if (doc.isDirty) {
-      window.mdReader.confirmReload(fileName).then((choice) => {
-        if (choice !== 'reload') return;
-        reloadDocFromDisk(docIndex);
-      });
-      return;
+    if (doc.isDirty || (doc === activeDoc() && state.mode === 'edit' && isEditorAhead(doc))) {
+      doc.reloadPrompt = true;
+      try {
+        if ((await window.mdReader.confirmReload(fileName)) !== 'reload') return;
+      } finally {
+        doc.reloadPrompt = false;
+      }
     }
-    reloadDocFromDisk(docIndex);
-    showToast(`"${fileName}" reloaded from disk`);
+    if (await reloadDocFromDisk(doc)) showToast(t('reloaded', { name: fileName }));
   }
 
-  async function reloadDocFromDisk(docIndex) {
-    const doc = state.documents[docIndex];
+  function isEditorAhead(doc) {
+    return state.editorInitialized && window.MDReaderEditor.getContent() !== doc.content;
+  }
+
+  async function reloadDocFromDisk(doc) {
     const data = await window.mdReader.readFile(doc.path);
-    if (!data) return;
+    if (!data || !state.documents.includes(doc)) return false;
     doc.content = data.content;
     doc.isDirty = false;
-    if (docIndex === state.activeIndex) {
+    if (doc === activeDoc()) {
+      const scrollTop = previewPane.scrollTop;
       displayActiveDocument();
+      previewPane.scrollTop = scrollTop; // keep the reading position on reload
     }
     syncSidebar();
+    return true;
   }
 
   // ---- Mode Switching ----
 
+  let editorLoad = null;
+
+  /** The CodeMirror bundle is ~600 KB; load it only when editing starts. */
+  function loadEditorBundle() {
+    if (!editorLoad) {
+      editorLoad = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'dist/editor.js';
+        script.onload = resolve;
+        script.onerror = () => {
+          editorLoad = null;
+          reject(new Error('editor bundle failed to load'));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return editorLoad;
+  }
+
+  function enterEditor(anchorLine) {
+    const doc = activeDoc();
+    if (!doc || state.mode !== 'edit') return;
+    if (!state.editorInitialized) initEditor();
+    suppressOnChange = true;
+    window.MDReaderEditor.setContent(doc.content);
+    suppressOnChange = false;
+
+    // Start the editor where the reader was, then re-pin both panes once the
+    // split-pane transition has settled (wrapped line heights change with width).
+    lockSync(MODE_TRANSITION_MS + 80);
+    window.MDReaderEditor.scrollToLine(anchorLine + 1);
+    setTimeout(() => {
+      if (state.mode !== 'edit' || activeDoc() !== doc) return;
+      lockSync(80);
+      window.MDReaderEditor.scrollToLine(anchorLine + 1);
+      alignPreviewToLine(anchorLine);
+      window.MDReaderEditor.focus();
+    }, MODE_TRANSITION_MS);
+  }
+
   function setMode(mode) {
+    const editing = mode === 'edit';
+    // Measure before the layout starts changing.
+    const anchorLine = editing ? previewTopLine() : 0;
     state.mode = mode;
+    appContainer.classList.toggle('edit-mode', editing);
+    modeToggle.classList.toggle('editing', editing);
+    modeLabel.textContent = t(editing ? 'read' : 'edit');
 
-    if (mode === 'edit') {
-      appContainer.classList.add('edit-mode');
-      syncEditorDocumentIndex();
-      modeLabel.textContent = 'Read';
-      modeIcon.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M1 8C1 8 3.5 3 8 3C12.5 3 15 8 15 8C15 8 12.5 13 8 13C3.5 13 1 8 1 8Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.5"/>
-        </svg>
-      `;
-
-      if (!state.editorInitialized) {
-        initEditor();
-      } else if (state.activeIndex >= 0) {
-        suppressOnChange = true;
-        window.MDReaderEditor.setContent(state.documents[state.activeIndex].content);
-        suppressOnChange = false;
-      }
-
+    if (editing) {
       closeSearch();
-      setTimeout(() => window.MDReaderEditor.focus(), 350);
+      if (window.MDReaderEditor) {
+        enterEditor(anchorLine);
+      } else {
+        loadEditorBundle()
+          .then(() => enterEditor(anchorLine))
+          .catch((err) => console.error(err));
+      }
     } else {
-      // Restore editor pane width (user's drag preference no longer applies)
+      // Drop the dragged split width; it is re-chosen per edit session
       editorPane.style.flexBasis = '';
       editorPane.style.width = '';
-      syncEditorDocumentIndex();
-      appContainer.classList.remove('edit-mode');
-      modeLabel.textContent = 'Edit';
-      modeIcon.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M11.5 1.5L14.5 4.5L5 14H2V11L11.5 1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      `;
-
-      if (state.activeIndex >= 0) {
-        window.MDReaderPreview.updatePreview(
-          state.documents[state.activeIndex].content,
-          previewContent,
-          state.documents[state.activeIndex].path
-        );
-        reapplySearch();
-        refreshOutline();
-      }
+      renderPreview();
     }
   }
 
   function toggleMode() {
-    if (state.activeIndex < 0) return;
+    const doc = activeDoc();
+    if (!doc) return;
     if (state.mode === 'edit') {
+      const anchorLine = state.editorInitialized ? window.MDReaderEditor.lineAtScrollTop(editorScrollTop()) - 1 : 0;
       saveEditorContentToDocument();
+      setMode('read');
+      lockSync(MODE_TRANSITION_MS + 80);
+      alignPreviewToLine(anchorLine);
+      setTimeout(() => {
+        if (state.mode === 'read' && activeDoc() === doc) alignPreviewToLine(anchorLine);
+      }, MODE_TRANSITION_MS);
+    } else {
+      setMode('edit');
     }
-    setMode(state.mode === 'read' ? 'edit' : 'read');
     collapseSidebar();
   }
 
   // ---- Editor Init ----
 
-  let scrollSyncBound = false;
+  function editorScroller() {
+    return editorContainer.querySelector('.cm-scroller');
+  }
+
+  function editorScrollTop() {
+    const scroller = editorScroller();
+    return scroller ? scroller.scrollTop : 0;
+  }
 
   /**
-   * Anchor-based scroll sync between the source editor (.cm-scroller) and the
-   * live preview. Instead of mapping by scroll-height ratio (which breaks with
-   * tables — small source, tall rendered output), we align on SOURCE LINE
-   * anchors: every block element in the preview carries data-source-line.
+   * Anchor-based scroll sync between the source editor and the live preview.
+   * Instead of mapping by scroll-height ratio (which breaks with tables —
+   * small source, tall rendered output), we align on SOURCE LINE anchors:
+   * every block element in the preview carries data-source-line.
    */
   function bindScrollSync() {
-    if (scrollSyncBound) return;
-    const scroller = editorContainer.querySelector('.cm-scroller');
+    const scroller = editorScroller();
     if (!scroller) return;
-
-    scrollSyncBound = true;
-    let syncing = false;
     let rafL = null;
     let rafR = null;
 
-    function markSyncing() {
-      syncing = true;
-      setTimeout(() => {
-        syncing = false;
-      }, 60);
-    }
-
-    function findPreviewElForLine(lineNo) {
-      const els = previewContent.querySelectorAll('[data-source-line]');
-      // DOM order follows source order → last element with line <= lineNo
-      let best = null;
-      for (const el of els) {
-        const l = parseInt(el.getAttribute('data-source-line'), 10);
-        if (l <= lineNo) best = el;
-        else break;
-      }
-      return best;
-    }
-
-    /**
-     * Compute el's offset top relative to a scroll container, walking
-     * offsetParent chain — viewport-independent and scroll-safe.
-     */
-    function offsetTopWithin(el, container) {
-      let top = 0;
-      let node = el;
-      while (node && node !== container && node !== document.body) {
-        top += node.offsetTop;
-        node = node.offsetParent;
-      }
-      return top;
-    }
-
-    function scrollPreviewToElement(el) {
-      previewPane.scrollTop = Math.max(0, offsetTopWithin(el, previewPane) - 16);
-    }
-
-    function syncLeftToRight() {
-      if (syncing || state.mode !== 'edit') return;
-      // Editor lines are 1-based; preview data-source-line is a 0-based index.
-      const topLine = window.MDReaderEditor.lineAtScrollTop(scroller.scrollTop);
-      const el = findPreviewElForLine(topLine - 1);
-      if (el) {
-        markSyncing();
-        scrollPreviewToElement(el);
-      }
-    }
-
-    function findPreviewElAtViewportTop() {
-      const els = previewContent.querySelectorAll('[data-source-line]');
-      if (els.length === 0) return null;
-      const paneRect = previewPane.getBoundingClientRect();
-      let best = els[0];
-      for (const el of els) {
-        const elRect = el.getBoundingClientRect();
-        if (elRect.top <= paneRect.top + 24) best = el;
-        else break;
-      }
-      return best;
-    }
-
-    function syncRightToLeft() {
-      if (syncing || state.mode !== 'edit') return;
-      const el = findPreviewElAtViewportTop();
-      if (!el) return;
-      const lineNo = parseInt(el.getAttribute('data-source-line'), 10);
-      if (!Number.isFinite(lineNo)) return;
-      markSyncing();
-      window.MDReaderEditor.scrollToLine(lineNo + 1);
-    }
-
     scroller.addEventListener('scroll', () => {
-      if (syncing || state.mode !== 'edit') return;
-      if (rafL) return;
+      if (syncLocked() || state.mode !== 'edit' || rafL) return;
       rafL = requestAnimationFrame(() => {
         rafL = null;
-        syncLeftToRight();
+        if (syncLocked() || state.mode !== 'edit') return;
+        // Editor lines are 1-based; preview data-source-line is 0-based.
+        alignPreviewToLine(window.MDReaderEditor.lineAtScrollTop(scroller.scrollTop) - 1);
       });
     });
 
     previewPane.addEventListener('scroll', () => {
-      if (syncing || state.mode !== 'edit') return;
-      if (rafR) return;
+      if (syncLocked() || state.mode !== 'edit' || rafR) return;
       rafR = requestAnimationFrame(() => {
         rafR = null;
-        syncRightToLeft();
+        if (syncLocked() || state.mode !== 'edit') return;
+        lockSync(60);
+        window.MDReaderEditor.scrollToLine(previewTopLine() + 1);
       });
     });
   }
 
   function initEditor() {
-    const debouncedPreview = debounce((content, documentIndex, version) => {
-      if (suppressOnChange) return;
-      // Ignore stale callbacks that fired after a document switch
-      if (version !== state.docVersion) return;
-      if (documentIndex >= 0 && documentIndex < state.documents.length) {
-        const doc = state.documents[documentIndex];
-        const hasChanged = doc.content !== content;
-
+    const debouncedPreview = debounce((content, version) => {
+      if (suppressOnChange || version !== state.docVersion) return; // stale after a switch
+      const doc = activeDoc();
+      if (!doc) return;
+      if (doc.content !== content) {
         doc.content = content;
-        if (hasChanged) {
-          doc.isDirty = true;
-        }
-
-        if (documentIndex === state.activeIndex) {
-          updateTitle();
-          window.MDReaderPreview.updatePreview(
-            content,
-            previewContent,
-            doc.path
-          );
-          reapplySearch();
-          refreshOutline();
-        }
-
-        patchSidebarDocument(doc);
+        doc.isDirty = true;
       }
+      updateTitle();
+      renderPreview();
+      patchSidebarDocument(doc);
     }, 200);
 
     window.MDReaderEditor.init(editorContainer, (content) => {
-      debouncedPreview(content, state.editorDocumentIndex, state.docVersion);
+      debouncedPreview(content, state.docVersion);
     });
-    if (state.activeIndex >= 0) {
-      syncEditorDocumentIndex();
-      window.MDReaderEditor.setContent(state.documents[state.activeIndex].content);
-    }
     state.editorInitialized = true;
     bindScrollSync();
   }
@@ -991,8 +991,7 @@
   }
 
   function clearSearchHighlights() {
-    const marks = previewContent.querySelectorAll('mark.search-hit');
-    marks.forEach((m) => {
+    previewContent.querySelectorAll('mark.search-hit').forEach((m) => {
       const parent = m.parentNode;
       parent.replaceChild(document.createTextNode(m.textContent), m);
       parent.normalize();
@@ -1006,32 +1005,23 @@
       return;
     }
 
-    const walker = document.createTreeWalker(
-      previewContent,
-      NodeFilter.SHOW_TEXT
-    );
+    const walker = document.createTreeWalker(previewContent, NodeFilter.SHOW_TEXT);
     const rangesByNode = new Map(); // textNode -> [{start,end}]
-    const totalMatches = { count: 0 };
+    const lowerTerm = term.toLowerCase();
 
     while (walker.nextNode()) {
       const node = walker.currentNode;
       if (!node.textContent) continue;
       const parentEl = node.parentElement;
-      if (parentEl && parentEl.closest('.hljs, pre')) continue; // skip code blocks
+      if (parentEl && parentEl.closest('pre')) continue; // skip code blocks
 
-      const text = node.textContent;
-      const lower = text.toLowerCase();
-      const lowerTerm = term.toLowerCase();
+      const lower = node.textContent.toLowerCase();
       let idx = 0;
-      let first = -1;
       while ((idx = lower.indexOf(lowerTerm, idx)) !== -1) {
-        if (first === -1) first = idx;
         if (!rangesByNode.has(node)) rangesByNode.set(node, []);
-        rangesByNode.get(node).push({ start: idx, end: idx + term.length });
-        totalMatches.count += 1;
-        idx += term.length;
+        rangesByNode.get(node).push({ start: idx, end: idx + lowerTerm.length });
+        idx += lowerTerm.length;
       }
-      void first;
     }
 
     // Rewrite each affected text node once (safe against node invalidation)
@@ -1039,7 +1029,6 @@
       const text = node.textContent;
       const frag = document.createDocumentFragment();
       let pos = 0;
-      ranges.sort((a, b) => a.start - b.start);
       ranges.forEach((r) => {
         if (r.start > pos) frag.appendChild(document.createTextNode(text.slice(pos, r.start)));
         const mark = document.createElement('mark');
@@ -1052,52 +1041,90 @@
       node.parentNode.replaceChild(frag, node);
     });
 
-    updateSearchCount(totalMatches.count);
-    scrollToCurrentMatch();
+    focusMatch(0);
   }
 
-  function updateSearchCount(total) {
+  function focusMatch(index) {
     const marks = previewContent.querySelectorAll('mark.search-hit');
-    const totalCount = total !== undefined ? total : marks.length;
-    if (totalCount === 0) {
-      searchCount.textContent = 'No results';
+    if (marks.length === 0) {
+      searchCount.textContent = t('noResults');
       return;
     }
-    const current = getCurrentMatchIndex();
-    searchCount.textContent = `${current + 1}/${totalCount}`;
-  }
-
-  function getCurrentMatchIndex() {
-    const marks = previewContent.querySelectorAll('mark.search-hit');
-    for (let i = 0; i < marks.length; i++) {
-      if (marks[i].classList.contains('current')) return i;
-    }
-    return 0;
-  }
-
-  function scrollToCurrentMatch() {
-    const marks = previewContent.querySelectorAll('mark.search-hit');
-    marks.forEach((m) => m.classList.remove('current'));
-    if (marks.length === 0) return;
-    marks[0].classList.add('current');
-    marks[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const idx = (index + marks.length) % marks.length;
+    marks.forEach((m, i) => m.classList.toggle('current', i === idx));
+    marks[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    searchCount.textContent = `${idx + 1}/${marks.length}`;
   }
 
   function navigateSearch(dir) {
-    const marks = previewContent.querySelectorAll('mark.search-hit');
+    const marks = Array.from(previewContent.querySelectorAll('mark.search-hit'));
     if (marks.length === 0) return;
-    let idx = getCurrentMatchIndex();
-    marks[idx].classList.remove('current');
-    idx = (idx + dir + marks.length) % marks.length;
-    marks[idx].classList.add('current');
-    marks[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
-    updateSearchCount();
+    const current = Math.max(0, marks.findIndex((m) => m.classList.contains('current')));
+    focusMatch(current + dir);
   }
 
   function reapplySearch() {
-    if (state.search.open) {
-      highlightSearch(searchInput.value);
+    if (state.search.open) highlightSearch(searchInput.value);
+  }
+
+  // ---- Welcome: recent files ----
+
+  function renderRecent(recent) {
+    while (recentList.firstChild) recentList.removeChild(recentList.firstChild);
+    (recent || []).slice(0, 6).forEach((filePath) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'welcome-recent-item';
+      item.title = filePath;
+      const name = document.createElement('span');
+      name.className = 'welcome-recent-name';
+      name.textContent = window.mdReader.basename(filePath);
+      const dir = document.createElement('span');
+      dir.className = 'welcome-recent-dir';
+      dir.textContent = filePath.slice(0, filePath.length - name.textContent.length - 1);
+      item.append(name, dir);
+      item.addEventListener('click', () => openPath(filePath));
+      recentList.appendChild(item);
+    });
+    recentSection.style.display = recentList.firstChild ? '' : 'none';
+  }
+
+  // ---- Settings (rendering switches + recent list) ----
+
+  let renderSettings = null;
+
+  function applySettings(settings) {
+    if (!settings) return;
+    renderRecent(settings.recent);
+    const next = `${settings.breaks}|${settings.typographer}`;
+    if (next === renderSettings) return;
+    renderSettings = next;
+    window.MDReaderPreview.configure({
+      breaks: settings.breaks,
+      typographer: settings.typographer,
+      labels: previewLabels(),
+    });
+    renderOptionsVersion += 1;
+    if (activeDoc()) {
+      const scrollTop = previewPane.scrollTop;
+      renderPreview();
+      previewPane.scrollTop = scrollTop;
     }
+  }
+
+  function previewLabels() {
+    return {
+      copy: t('copy'),
+      copied: t('copied'),
+      frontMatterLabel: t('frontMatter'),
+      alertLabels: {
+        note: t('note'),
+        tip: t('tip'),
+        important: t('important'),
+        warning: t('warning'),
+        caution: t('caution'),
+      },
+    };
   }
 
   // ---- Drag & Drop ----
@@ -1105,14 +1132,23 @@
   function setupDragDrop() {
     let dropOverlay = null;
 
+    function removeDropOverlay() {
+      if (dropOverlay) {
+        dropOverlay.remove();
+        dropOverlay = null;
+      }
+    }
+
     document.addEventListener('dragover', (e) => {
       e.preventDefault();
       e.stopPropagation();
       if (!dropOverlay) {
         dropOverlay = document.createElement('div');
         dropOverlay.className = 'drop-overlay';
-        dropOverlay.innerHTML =
-          '<span class="drop-overlay-text">Drop Markdown file here</span>';
+        const text = document.createElement('span');
+        text.className = 'drop-overlay-text';
+        text.textContent = t('dropHere');
+        dropOverlay.appendChild(text);
         document.body.appendChild(dropOverlay);
       }
     });
@@ -1120,12 +1156,7 @@
     document.addEventListener('dragleave', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (
-        e.clientX <= 0 ||
-        e.clientY <= 0 ||
-        e.clientX >= window.innerWidth ||
-        e.clientY >= window.innerHeight
-      ) {
+      if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
         removeDropOverlay();
       }
     });
@@ -1135,24 +1166,16 @@
       e.stopPropagation();
       removeDropOverlay();
 
-      const files = Array.from(e.dataTransfer.files || []);
-      const mdFiles = files.filter((f) =>
-        /\.(md|markdown|mdown)$/i.test(f.path || f.name)
-      );
+      const paths = Array.from(e.dataTransfer.files || [])
+        .map((f) => window.mdReader.pathForFile(f))
+        .filter((p) => /\.(md|markdown|mdown)$/i.test(p || ''));
       const dataList = [];
-      for (const file of mdFiles) {
-        const data = await window.mdReader.readFile(file.path);
+      for (const filePath of paths) {
+        const data = await window.mdReader.readFile(filePath);
         if (data) dataList.push(data);
       }
       if (dataList.length > 0) loadFiles(dataList);
     });
-
-    function removeDropOverlay() {
-      if (dropOverlay) {
-        dropOverlay.remove();
-        dropOverlay = null;
-      }
-    }
   }
 
   // ---- Divider drag (edit-mode split resize) ----
@@ -1169,13 +1192,10 @@
 
     document.addEventListener('mousemove', (e) => {
       if (!dragging) return;
-      const rect = appContainer.getBoundingClientRect();
-      const pct = Math.min(
-        0.8,
-        Math.max(0.2, (e.clientX - rect.left) / rect.width) * 100
-      );
-      editorPane.style.flexBasis = pct + '%';
-      editorPane.style.width = pct + '%';
+      const rect = mainContent.getBoundingClientRect();
+      const ratio = Math.min(0.8, Math.max(0.2, (e.clientX - rect.left) / rect.width));
+      editorPane.style.flexBasis = ratio * 100 + '%';
+      editorPane.style.width = ratio * 100 + '%';
     });
 
     document.addEventListener('mouseup', () => {
@@ -1202,6 +1222,8 @@
       if (index >= 0) activateOutlineEntry(index);
     });
     previewPane.addEventListener('scroll', onPreviewScrollForOutline);
+    previewContent.addEventListener('md-anchor', (e) => scrollToAnchor(e.detail.id));
+    previewContent.addEventListener('md-open', (e) => openPath(e.detail.path, e.detail.hash));
     mainContent.addEventListener('mousedown', () => {
       if (sidebarCollapsed || state.documents.length === 0) return;
       collapseSidebar();
@@ -1222,20 +1244,16 @@
     searchPrev.addEventListener('click', () => navigateSearch(-1));
     searchClose.addEventListener('click', closeSearch);
 
-    window.mdReader.onFileOpened(loadFile);
+    window.mdReader.onFileOpened((data) => loadFiles([data]));
     window.mdReader.onFileChanged(handleFileChanged);
+    window.mdReader.onSettingsChanged(applySettings);
     window.mdReader.onMenuAction((data) => {
-      const action = data && data.action ? data.action : data;
-      const payload = data && data.payload;
-      switch (action) {
+      switch (data && data.action) {
         case 'new':
           newDocument();
           break;
         case 'open':
           openFile();
-          break;
-        case 'open-recent':
-          openRecent(payload);
           break;
         case 'save':
           saveFile();
@@ -1252,22 +1270,17 @@
         case 'toggle-outline':
           toggleOutline();
           break;
-        case 'toggle-theme':
-          window.MDReaderTheme.toggle();
-          break;
         case 'close-document':
           closeActiveDocument();
           break;
       }
     });
 
-    // Cmd+F opens read-mode search; menu accelerators own Cmd+E / Cmd+Shift+T
+    // Cmd/Ctrl+F opens read-mode search; in edit mode CodeMirror owns it.
     document.addEventListener('keydown', (e) => {
-      if (e.metaKey && e.key === 'f') {
-        if (state.mode === 'read' && state.activeIndex >= 0) {
-          e.preventDefault();
-          openSearch();
-        }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f' && state.mode === 'read' && state.activeIndex >= 0) {
+        e.preventDefault();
+        openSearch();
       }
     });
   }
@@ -1275,22 +1288,22 @@
   // ---- Init ----
 
   function init() {
-    window.MDReaderTheme.init();
+    window.MDReaderI18n.apply(document);
+    window.MDReaderPreview.configure({ labels: previewLabels() });
     applySidebarState();
     applyOutlineState();
     setupListeners();
     setupDragDrop();
     setupDividerDrag();
-    window.mdReader.notifyRendererReady();
+    window.mdReader.getSettings().then(applySettings);
 
     window.mdReader.onBeforeClose(async () => {
-      const ok = await hasUnsavedChangesAndConfirm();
-      if (ok) {
-        window.mdReader.confirmClose();
-      } else {
-        window.mdReader.cancelClose();
-      }
+      if (await hasUnsavedChangesAndConfirm()) window.mdReader.confirmClose();
+      else window.mdReader.cancelClose();
     });
+
+    // Last: main replays files queued before the renderer was ready.
+    window.mdReader.notifyRendererReady();
   }
 
   if (document.readyState === 'loading') {

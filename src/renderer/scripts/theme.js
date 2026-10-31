@@ -1,65 +1,33 @@
 /* ==========================================
-   MD reader — Theme Manager (Light/Dark)
+   MD reader — Theme
+   Colors follow prefers-color-scheme (see themes.css). The main process
+   drives that media query through nativeTheme.themeSource, so the window
+   background, native dialogs and the page always agree.
    ========================================== */
 
 (function () {
-  const STORAGE_KEY = 'md-reader-theme';
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
 
-  /**
-   * Get the current theme from localStorage, default to 'light'
-   * @returns {'light'|'dark'}
-   */
-  function getTheme() {
-    return localStorage.getItem(STORAGE_KEY) || 'light';
+  function isDark() {
+    return media.matches;
   }
 
-  /**
-   * Apply theme to the document
-   * @param {'light'|'dark'} themeName
-   */
-  function applyTheme(themeName) {
-    document.documentElement.setAttribute('data-theme', themeName);
-    localStorage.setItem(STORAGE_KEY, themeName);
-    updateThemeIcon(themeName);
-  }
-
-  /**
-   * Toggle between light and dark themes
-   * @returns {'light'|'dark'} the new theme
-   */
   function toggle() {
-    const current = getTheme();
-    const next = current === 'light' ? 'dark' : 'light';
-    applyTheme(next);
-    return next;
+    window.mdReader.setSetting('theme', isDark() ? 'light' : 'dark');
   }
 
-  /**
-   * Update the theme toggle button icon
-   * @param {'light'|'dark'} themeName
-   */
-  function updateThemeIcon(themeName) {
-    const sunIcon = document.getElementById('sunIcon');
-    const moonIcon = document.getElementById('moonIcon');
-    if (sunIcon && moonIcon) {
-      if (themeName === 'light') {
-        sunIcon.style.display = '';
-        moonIcon.style.display = 'none';
-      } else {
-        sunIcon.style.display = 'none';
-        moonIcon.style.display = '';
-      }
+  // One-time migration from the old localStorage preference. Only "dark"
+  // is carried over: the old code wrote "light" for everyone by default,
+  // and pinning that would stop the app from following the system.
+  try {
+    const legacy = localStorage.getItem('md-reader-theme');
+    if (legacy) {
+      localStorage.removeItem('md-reader-theme');
+      if (legacy === 'dark') window.mdReader.setSetting('theme', 'dark');
     }
+  } catch (_) {
+    /* storage unavailable */
   }
 
-  /**
-   * Initialize theme from stored preference
-   */
-  function init() {
-    const theme = getTheme();
-    applyTheme(theme);
-  }
-
-  // Export to window
-  window.MDReaderTheme = { init, toggle, getTheme, applyTheme };
+  window.MDReaderTheme = { toggle, isDark };
 })();
